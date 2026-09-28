@@ -232,4 +232,4 @@ def test_star_thermal_steps_require_a_declared_handoff():
         deck=replace(example_deck(), layouts=(layout,)),
         liquid_handler=LiquidHandler.STAR,
     )
-    assert "Supply an async thermocycle callback" in bundle.files["protocol.py"]
+    assert "Supply an async set_temperature callback" in bundle.files["protocol.py"]

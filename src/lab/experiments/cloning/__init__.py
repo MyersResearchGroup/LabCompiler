@@ -4,7 +4,25 @@ Stage recipes live in :mod:`lab.experiments.cloning.stages`. A deck names
 containers and sites; compilation lowers it for one handler.
 """
 
+from lab.experiments.cloning.build import build
 from lab.experiments.cloning.decks import assembly_deck, plating_deck, transformation_deck
+from lab.experiments.cloning.methods import (
+    AssemblyMethod,
+    CloningMethods,
+    ExternalPreparationMethod,
+    PlatingMethod,
+    Reagent,
+    TransformationMethod,
+)
+from lab.experiments.cloning.planning import (
+    BuildPlan,
+    BuildRequest,
+    BuildTarget,
+    CountTarget,
+    EditablePositions,
+    PlanningPolicy,
+    plan,
+)
 from lab.experiments.cloning.stages import (
     AssemblyLayout,
     AssemblyReaction,
@@ -21,6 +39,14 @@ from lab.experiments.cloning.stages import (
     record_plating,
     record_transformation,
 )
+from lab.experiments.cloning.systems import (
+    AssemblyRecipe,
+    CloningSystem,
+    ExternalPreparationRecipe,
+    FragmentSelection,
+    PlatingRecipe,
+    TransformationRecipe,
+)
 from lab.experiments.cloning.types import (
     BSAI,
     Assembly,
@@ -33,6 +59,24 @@ from lab.experiments.cloning.workflow import golden_gate
 
 __all__ = [
     "Assembly",
+    "AssemblyMethod",
+    "AssemblyRecipe",
+    "CloningSystem",
+    "BuildPlan",
+    "BuildRequest",
+    "BuildTarget",
+    "CloningMethods",
+    "CountTarget",
+    "ExternalPreparationMethod",
+    "ExternalPreparationRecipe",
+    "EditablePositions",
+    "FragmentSelection",
+    "PlanningPolicy",
+    "PlatingMethod",
+    "PlatingRecipe",
+    "Reagent",
+    "build",
+    "plan",
     "AssemblyLayout",
     "AssemblyReaction",
     "AssemblyRequest",
@@ -41,6 +85,8 @@ __all__ = [
     "PlatingRequest",
     "PlatingVolumes",
     "Transformation",
+    "TransformationMethod",
+    "TransformationRecipe",
     "TransformationLayout",
     "TransformationRequest",
     "assembly_deck",

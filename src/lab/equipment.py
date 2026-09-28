@@ -37,6 +37,7 @@ class TipRackModel(Enum):
     OPENTRONS_20_UL = "opentrons_20_ul"
     OPENTRONS_300_UL = "opentrons_300_ul"
     FLEX_200_UL = "flex_200_ul"
+    FLEX_50_UL = "flex_50_ul"
     HAMILTON_50_UL = "hamilton_50_ul"
     HAMILTON_300_UL = "hamilton_300_ul"
 
@@ -45,6 +46,7 @@ class PipetteModel(Enum):
     P20_SINGLE_GEN2 = "p20_single_gen2"
     P300_SINGLE_GEN2 = "p300_single_gen2"
     FLEX_1CHANNEL_1000 = "flex_1channel_1000"
+    FLEX_1CHANNEL_50 = "flex_1channel_50"
 
 
 class Mount(Enum):

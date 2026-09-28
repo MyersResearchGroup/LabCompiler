@@ -2,17 +2,19 @@
 
 from decimal import Decimal
 
-from lab.model import (
-    Binding,
+from lab.inventory import MaterialForm
+from lab.model import RecordedProtocol
+from lab.operations import (
     Distribute,
+    ExternalPreparation,
     Mix,
-    RecordedProtocol,
     SetTemperature,
     Step,
     Thermocycle,
     Transfer,
 )
 from lab.samples import Location
+from lab.target import Binding
 from lab.units import number
 
 
@@ -26,6 +28,7 @@ def step_error(index: int, step: Step, message: str) -> CompileError:
 
 def validate(protocol: RecordedProtocol, bindings: tuple[Binding, ...]) -> dict[Location, Decimal]:
     validate_samples(protocol)
+    count_trace(protocol)
     return volume_trace(protocol, bindings)[-1]
 
 
@@ -102,10 +105,20 @@ def volume_trace(
             if fill.volume > capacities[location]:
                 raise CompileError(f"Initial volume exceeds the bound capacity of {location}")
             volumes[location] = fill.volume
+    samples = {sample.id: sample for sample in protocol.samples}
+    counted = {p.location for p in protocol.placements if samples[p.sample_id].count is not None}
+    if any(volumes[location] for location in counted):
+        raise CompileError("Counted materials cannot be loaded as liquid volumes")
     states = [volumes.copy()]
     for index, step in enumerate(protocol.steps):
         if isinstance(step, (Transfer, Mix)):
             source = step.source if isinstance(step, Transfer) else step.location
+            if source in counted:
+                raise step_error(
+                    index,
+                    step,
+                    "Counted material requires explicit external preparation before pipetting",
+                )
             if source not in volumes:
                 raise step_error(index, step, f"Unknown source {source}")
             available = max(Decimal(0), volumes[source] - dead[source])
@@ -124,6 +137,8 @@ def volume_trace(
                 volumes[source] -= step.volume
                 volumes[step.destination] += step.volume
         elif isinstance(step, Distribute):
+            if step.source in counted:
+                raise step_error(index, step, "Counted material cannot be pipetted")
             if step.source not in volumes:
                 raise step_error(index, step, f"Unknown source {step.source}")
             needed = step.volume * len(step.destinations)
@@ -143,6 +158,23 @@ def volume_trace(
             volumes[step.source] -= needed
             for destination in step.destinations:
                 volumes[destination] += step.volume
+        elif isinstance(step, ExternalPreparation):
+            for port in step.inputs:
+                if port.location not in volumes:
+                    raise step_error(index, step, "Unknown external input location")
+                if port.volume_ul > max(Decimal(0), volumes[port.location] - dead[port.location]):
+                    raise step_error(
+                        index, step, "External preparation exceeds available input volume"
+                    )
+                volumes[port.location] -= port.volume_ul
+            for port in step.outputs:
+                if port.location not in volumes or volumes[port.location]:
+                    raise step_error(
+                        index, step, "External output must occupy a known empty location"
+                    )
+                if port.volume_ul > capacities[port.location]:
+                    raise step_error(index, step, "External output exceeds container capacity")
+                volumes[port.location] = port.volume_ul
         elif isinstance(step, Thermocycle):
             contents = [v for loc, v in volumes.items() if loc.resource == step.resource]
             if not contents:
@@ -153,6 +185,58 @@ def volume_trace(
             if not any(loc.resource == step.resource for loc in volumes):
                 raise step_error(index, step, f"Unknown thermal resource {step.resource}")
         states.append(volumes.copy())
+    return tuple(states)
+
+
+def count_trace(protocol: RecordedProtocol) -> tuple[dict[Location, int], ...]:
+    """Count whole materials separately; pipetting never consumes those counts."""
+    samples = {sample.id: sample for sample in protocol.samples}
+    at = {place.location: samples[place.sample_id] for place in protocol.placements}
+    counted = {location: sample for location, sample in at.items() if sample.count is not None}
+    counts = {
+        location: int(sample.count or 0) if sample.id in protocol.input_sample_ids else 0
+        for location, sample in counted.items()
+    }
+    states = [counts.copy()]
+    for index, step in enumerate(protocol.steps):
+        if isinstance(step, ExternalPreparation):
+            for port in (*step.inputs, *step.outputs):
+                if port.location not in at or (port.count > 0) != (port.location in counted):
+                    raise step_error(
+                        index, step, "External ports must match declared material forms"
+                    )
+            for port in step.inputs:
+                if port.count:
+                    if port.count > counts[port.location]:
+                        raise step_error(
+                            index, step, "External preparation exceeds available material count"
+                        )
+                    counts[port.location] -= port.count
+            for port in step.outputs:
+                if port.count:
+                    if counts[port.location]:
+                        raise step_error(
+                            index, step, "External counted output requires an empty location"
+                        )
+                    counts[port.location] = port.count
+        elif isinstance(step, (Transfer, Distribute)):
+            destinations = (step.destination,) if isinstance(step, Transfer) else step.destinations
+            for destination in destinations:
+                if destination in counted:
+                    if (
+                        counted[destination].form is not MaterialForm.PLATED_SAMPLE
+                        or counts[destination]
+                    ):
+                        raise step_error(
+                            index, step, "A deposition requires an empty plated-sample location"
+                        )
+                    counts[destination] = 1
+        states.append(counts.copy())
+    for location, sample in counted.items():
+        if sample.id in protocol.output_sample_ids and counts[location] != sample.count:
+            raise CompileError(
+                "Declared output count does not match the protocol's material balance"
+            )
     return tuple(states)
 
 

@@ -73,6 +73,14 @@ For custom protocols, declare typed sample metadata with `protocol.add_sample(sa
 
 `lab.samples` also defines `Location(resource, well)`, `SamplePlacement`, and `OutputManifest`. Recorded operations, sample placements, target bindings, and final volume accounting use the same logical `Location` type. For example, an output placement's `location` can be used directly as a key in `dict(compiled.final_volumes)`. `lab.part.Part` identifies a biological part by its SBOL IRI; cloning types and stage builders live under `lab.experiments.cloning`.
 
+## Biological designs and provenance
+
+`lab.provenance` provides immutable SBOL3 designs, material implementations, activities, qualified usages and associations, agents, and plans. Author a `Document`, explicitly add its objects, and call `freeze()` to validate references and obtain a reproducible snapshot. Import and export local Turtle with `Document.read()` and `snapshot.write()`, or exchange a detached pySBOL3 document with `from_sbol3()` and `to_sbol3()`.
+
+The [provenance guide](docs/provenance.md) covers the Python API and the distinction between planned, recorded, and simulated evidence. Run `uv run --no-sync python -m examples.provenance` for a complete authoring and round-trip example. The [experiment walkthrough](docs/cloning-provenance.md) covers inventory-aware assembly, transformation, plating, external preparation, Addgene records, compilation to SBOL/LabOP/robot bundles, and explicit run observations. Run `uv run python -m examples.cloning_workflow --target manual` for the complete synthetic software example. See the [implementation status](docs/provenance-implementation.md) for remaining integrations.
+
+The [worked notebook](examples/cloning_provenance.ipynb) authors the inputs directly, round-trips them through files, resolves preparation and cloning stages, compiles OT-2/Flex/STAR bundles, and follows a semantic step into LabOP, robot source, and an explicitly synthetic run record. It includes saved outputs and material-accounting tables. Launch it with `uv run --extra opentrons --extra star --with jupyterlab jupyter lab examples/cloning_provenance.ipynb`.
+
 ## Describe a deck
 
 This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/deck_layouts.py).
@@ -168,7 +176,7 @@ uv run --no-sync python -m examples.deck_layouts --target ot2
 uv run --no-sync python -m examples.deck_layouts --target flex
 ```
 
-Use `manual` or `ot2` for the cloning example. Its assembly recipe includes transfers below the current Flex preset's supported pipetting range. The deck layouts example supports `ot2`, `flex`, and `star`.
+The provenance assembly and complete cloning workflow examples support `manual`, `ot2`, `flex`, and `star`. Flex selects the 50 µL pipette for small transfers. STAR thermal operations require explicit runtime callbacks. The deck layouts example supports `ot2`, `flex`, and `star`.
 
 The cloning example writes separate `assembly`, `transformation`, and `plating` bundles under `build/cloning/<target>`, including for the manual target. The deck layouts example writes to `build/decks/<target>`. Both accept `--out` to choose a different output directory. Compilation never connects to hardware.
 
@@ -207,6 +215,7 @@ src/lab/
     protocol.py       # Protocol builder, Plate, Well
     model.py          # Recorded operations, protocol snapshots, target plans
     part.py           # SBOL part identity
+    provenance/       # SBOL3 designs, provenance, immutable document snapshots
     samples.py        # Sample, Location, SamplePlacement, OutputManifest
     labware.py        # Logical labware specifications
     equipment.py      # Liquid handlers and equipment identifiers

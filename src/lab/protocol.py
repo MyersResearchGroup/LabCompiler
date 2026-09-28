@@ -7,14 +7,16 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from lab.model import (
+from lab.model import RecordedProtocol
+from lab.operations import (
     Distribute,
+    ExternalPreparation,
     Fill,
     Hold,
     ManualInstruction,
+    MaterialPort,
     Mix,
     Origin,
-    RecordedProtocol,
     Resource,
     SetTemperature,
     Step,
@@ -77,9 +79,10 @@ def _text(value: str, label: str) -> str:
 class Protocol:
     """Record sequential work. Construction and compilation never operate hardware."""
 
-    def __init__(self, name: str, *, description: str = "") -> None:
+    def __init__(self, name: str, *, description: str = "", identity: str | None = None) -> None:
         self.name = _text(name, "Protocol name")
         self.description = description
+        self.identity = identity
         self._owner = object()
         self._resources: dict[str, Resource] = {}
         self._steps: list[Step] = []
@@ -150,6 +153,21 @@ class Protocol:
             raise ValueError("Unknown well")
         return Location(well.resource, well.name)
 
+    def external_preparation(
+        self,
+        *,
+        procedure: str,
+        instructions: str,
+        inputs: tuple[MaterialPort, ...],
+        outputs: tuple[MaterialPort, ...],
+    ) -> None:
+        """Specify operator work and its expected material balance, without executing it."""
+        for port in (*inputs, *outputs):
+            resource = self._resources.get(port.location.resource)
+            if resource is None or port.location.well not in resource.wells:
+                raise ValueError("External material ports must reference this protocol's wells")
+        self._steps.append(ExternalPreparation(procedure, instructions, inputs, outputs, _origin()))
+
     def load(self, well: Well, material: str, *, volume: Any) -> None:
         """Declare initial contents before recording any steps; this is not a transfer."""
         if self._steps:
@@ -191,11 +209,18 @@ class Protocol:
         if is_output:
             self._output_sample_ids.append(sample.id)
 
-    def transfer(self, source: Well, destination: Well, *, volume: Any) -> None:
+    def transfer(
+        self, source: Well, destination: Well, *, volume: Any, destination_height: Any = None
+    ) -> None:
         start, end = self._location(source), self._location(destination)
         if start == end:
             raise ValueError("Transfer source and destination must differ")
-        self._steps.append(Transfer(start, end, magnitude(volume, "microliter"), _origin()))
+        height = (
+            None
+            if destination_height is None
+            else magnitude(destination_height, "millimeter", positive=False)
+        )
+        self._steps.append(Transfer(start, end, magnitude(volume, "microliter"), _origin(), height))
 
     def distribute(
         self,
@@ -280,4 +305,5 @@ class Protocol:
             tuple(self._placements),
             tuple(self._input_sample_ids),
             tuple(self._output_sample_ids),
+            self.identity,
         )

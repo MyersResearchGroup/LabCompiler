@@ -1,0 +1,27 @@
+@prefix sbol: <http://sbols.org/v3#> .
+@prefix ex: <https://example.org/fixture/> .
+@prefix vendor: <https://example.org/vendor#> .
+
+ex:sequence a sbol:Sequence ;
+    sbol:hasNamespace <https://example.org/fixture> ;
+    sbol:displayId "sequence" ;
+    sbol:elements "ACGTACGT" ;
+    sbol:encoding <https://identifiers.org/edam:format_1207> .
+
+ex:design a sbol:Component ;
+    sbol:hasNamespace <https://example.org/fixture> ;
+    sbol:displayId "design" ;
+    sbol:type <https://identifiers.org/SBO:0000251> ;
+    sbol:hasSequence ex:sequence ;
+    sbol:hasFeature <https://example.org/fixture/design/site> ;
+    vendor:catalog [ vendor:accession "external-catalog-record" ;
+                     vendor:label "Descriptive label"@en ] .
+
+<https://example.org/fixture/design/site> a sbol:SequenceFeature ;
+    sbol:displayId "site" ;
+    sbol:hasLocation <https://example.org/fixture/design/site/cut> .
+
+<https://example.org/fixture/design/site/cut> a sbol:Cut ;
+    sbol:displayId "cut" ;
+    sbol:hasSequence ex:sequence ;
+    sbol:at 4 .

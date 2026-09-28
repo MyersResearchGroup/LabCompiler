@@ -2,6 +2,7 @@
 
 import json
 import sys
+from decimal import Decimal
 from importlib import import_module
 from importlib.metadata import distribution
 from importlib.resources import files
@@ -9,20 +10,33 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import lab
+from lab.deck import ContainerSpec, Deck
+from lab.experiment import ExperimentPlan, ProtocolStage
+from lab.labware import LabwareKind, LabwareSpec
+from lab.provenance import Activity, Document
 from lab.targets import Manual
 
 
 def main() -> None:
     # Verify public modules and subpackages are present in the installed distribution.
     import_module("lab.experiments.cloning")
+    import_module("lab.experiments.cloning.routes")
     import_module("lab.part")
     import_module("lab.samples")
+    import_module("lab.provenance")
+    import_module("lab.inventory")
+    import_module("lab.suppliers")
+    import_module("lab.execution")
+    import_module("lab.labop")
 
     package = distribution("lab-compiler")
     assert package.version == lab.__version__
     assert package.metadata["Name"] == "lab-compiler"
     assert set(package.metadata.get_all("Provides-Extra", [])) == {"opentrons", "star"}
     assert files("lab").joinpath("py.typed").is_file()
+    assert files("lab.provenance").joinpath("resources/lab.ttl").is_file()
+    assert files("lab.labop").joinpath("resources/upstream.json").is_file()
+    assert files("lab.labop").joinpath("resources/LICENSE.txt").is_file()
     assert any(str(path).endswith("licenses/LICENSE") for path in package.files or ())
     assert lab.__file__ is not None
     assert not Path(lab.__file__).resolve().is_relative_to(Path(__file__).resolve().parents[1])
@@ -39,6 +53,39 @@ def main() -> None:
         plan = json.loads((output / "plan.json").read_text())
         assert plan["compiler_version"] == package.version
         assert (output / "protocol.html").stat().st_size > 0
+        provenance = Document(namespace="https://example.org/install_check")
+        provenance.add(Activity(identity=provenance.iri("activity")))
+        snapshot = provenance.freeze()
+        snapshot.write(output / "provenance.ttl")
+        assert Document.read(output / "provenance.ttl").freeze().digest == snapshot.digest
+        assert not snapshot.to_sbol3().validate().errors
+        experiment = ExperimentPlan(
+            identity="https://example.org/install_check/experiment",
+            provenance=snapshot,
+            stages=(
+                ProtocolStage(
+                    identity="https://example.org/install_check/stage",
+                    protocol=protocol.snapshot(),
+                    deck=Deck(
+                        containers=tuple(
+                            ContainerSpec(
+                                id=name,
+                                labware=LabwareSpec(
+                                    kind=LabwareKind.PLATE,
+                                    rows=1,
+                                    columns=1,
+                                    capacity_ul=Decimal(200),
+                                ),
+                            )
+                            for name in ("source", "destination")
+                        )
+                    ),
+                ),
+            ),
+        )
+        bundle = lab.compile(experiment, Manual())
+        bundle.write(output / "experiment")
+        assert "protocol.labop.ttl" in bundle.files
 
     assert not any(name.split(".")[0] in {"opentrons", "pylabrobot"} for name in sys.modules)
     print(f"lab-compiler {package.version}: installed package check passed")
