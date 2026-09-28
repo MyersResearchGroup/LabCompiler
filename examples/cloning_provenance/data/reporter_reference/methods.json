@@ -1,0 +1,97 @@
+{
+  "format": "lab.cloning-methods.v1",
+  "methods": {
+    "assemblies": [
+      {
+        "cycles": 1,
+        "diluent": {
+          "identity": "https://example.org/reporter/water"
+        },
+        "dna_volume_ul": "1",
+        "enzyme": "EcoRI",
+        "identity": "https://example.org/reporter/method",
+        "lid_celsius": null,
+        "mix_cycles": 1,
+        "mix_volume_ul": "2",
+        "output_volume_ul": "5",
+        "profile": [
+          {
+            "celsius": "25",
+            "seconds": "1"
+          }
+        ],
+        "reaction_volume_ul": "5",
+        "reagents": [
+          {
+            "component": {
+              "identity": "https://example.org/reporter/buffer"
+            },
+            "volume_ul": "1"
+          }
+        ]
+      }
+    ],
+    "platings": [
+      {
+        "diluent": {
+          "identity": "https://example.org/reporter/broth"
+        },
+        "dilution_factors": [
+          "2",
+          "3"
+        ],
+        "identity": "https://example.org/reporter/plating_method",
+        "mix_cycles": 1,
+        "mix_volume_ul": "1",
+        "spot_height_mm": "2",
+        "spot_volume_ul": "1",
+        "substrate": {
+          "identity": "https://example.org/reporter/substrate"
+        },
+        "transfer_volume_ul": "1"
+      }
+    ],
+    "preparations": [
+      {
+        "identity": "https://example.org/reporter/preparation_method",
+        "instructions": "Follow the supplied preparation procedure P01; record the recovered material identity and measured quantity.",
+        "output_count": 0,
+        "output_volume_ul": "10",
+        "procedure": "https://example.org/reporter/SOP_P01",
+        "reagents": [],
+        "source_count": 1,
+        "source_volume_ul": "0"
+      }
+    ],
+    "transformations": [
+      {
+        "cell_mix_cycles": 1,
+        "cell_mix_volume_ul": "1",
+        "cell_volume_ul": "2",
+        "dna_mix_cycles": 1,
+        "dna_volume_ul": "1",
+        "identity": "https://example.org/reporter/transformation_method",
+        "initial_celsius": "25",
+        "output_volume_ul": "5",
+        "profile": [
+          {
+            "celsius": "25",
+            "seconds": "1"
+          }
+        ],
+        "recovery": {
+          "component": {
+            "identity": "https://example.org/reporter/broth"
+          },
+          "volume_ul": "2"
+        },
+        "recovery_profile": [
+          {
+            "celsius": "25",
+            "seconds": "1"
+          }
+        ]
+      }
+    ]
+  }
+}

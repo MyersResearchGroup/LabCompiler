@@ -1,0 +1,73 @@
+{
+  "format": "lab.cloning-system.v1",
+  "system": {
+    "identity": "https://example.org/reporter/complete_system",
+    "recipes": [
+      {
+        "identity": "https://example.org/reporter/plating_recipe",
+        "kind": "plating",
+        "method": "https://example.org/reporter/plating_method",
+        "product": {
+          "identity": "https://example.org/reporter/strain"
+        }
+      },
+      {
+        "identity": "https://example.org/reporter/preparation_recipe",
+        "kind": "preparation",
+        "method": "https://example.org/reporter/preparation_method",
+        "output_form": "dna",
+        "product": {
+          "identity": "https://example.org/reporter/vector"
+        },
+        "source": {
+          "identity": "https://example.org/reporter/vector"
+        },
+        "source_form": "bacterial_stab"
+      },
+      {
+        "circular": true,
+        "enzyme": "EcoRI",
+        "fragments": [
+          {
+            "component": {
+              "identity": "https://example.org/reporter/vector"
+            },
+            "left_cut": 5,
+            "reverse_complement": false,
+            "right_cut": 5
+          },
+          {
+            "component": {
+              "identity": "https://example.org/reporter/insert"
+            },
+            "left_cut": 3,
+            "reverse_complement": false,
+            "right_cut": 12
+          }
+        ],
+        "identity": "https://example.org/reporter/recipe",
+        "kind": "assembly",
+        "method": "https://example.org/reporter/method",
+        "product": {
+          "identity": "https://example.org/reporter/target"
+        }
+      },
+      {
+        "chassis": {
+          "identity": "https://example.org/reporter/cells"
+        },
+        "identity": "https://example.org/reporter/transformation_recipe",
+        "kind": "transformation",
+        "method": "https://example.org/reporter/transformation_method",
+        "plasmids": [
+          {
+            "identity": "https://example.org/reporter/target"
+          }
+        ],
+        "product": {
+          "identity": "https://example.org/reporter/strain"
+        }
+      }
+    ]
+  }
+}
