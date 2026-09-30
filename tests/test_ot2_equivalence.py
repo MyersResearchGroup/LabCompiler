@@ -11,7 +11,19 @@ from pathlib import Path
 import pytest
 
 import lab
+from examples.transformation import (
+    CELL_ALIQUOT,
+    CELLS_PER_REACTION,
+    DH5ALPHA,
+    DNA_1,
+    DNA_2,
+    REPLICATES,
+    STRAIN_1,
+    STRAIN_2,
+    TRANSFORMATIONS,
+)
 from lab.experiments.cloning import (
+    TransformationRequest,
     assembly_deck,
     build_assembly,
     build_plating,
@@ -20,6 +32,7 @@ from lab.experiments.cloning import (
     transformation_deck,
 )
 from lab.targets import LiquidHandler
+from lab.units import magnitude
 
 try:
     from opentrons.simulate import simulate
@@ -231,6 +244,49 @@ def run(protocol: protocol_api.ProtocolContext):
     from pudu.transformation import HeatShockTransformation
     engine = HeatShockTransformation(
         transformation_data=strains, plasmid_locations=locations, replicates=2
+    )
+    engine.run(protocol)
+    protocol.comment('HANDOFF ' + json.dumps(engine.dict_of_parts_in_thermocycler))
+"""
+    )
+    pudu = _log(source, tmp_path)
+    assert _transfers(ours) == _transfers(pudu)
+    outputs = protocol.snapshot().output_manifest()
+    locations = {placement.sample_id: placement.location for placement in outputs.placements}
+    assert {
+        locations[sample.id].well: list(sample.contents) for sample in outputs.samples
+    } == _handoff(pudu)
+
+
+@pytest.mark.integration
+@requires_robots
+def test_triplicate_transformation_matches_pudu_transfers_and_well_labels(tmp_path):
+    """Two DNAs, three replicates, 20 µL of cells from one 1 mL aliquot."""
+    strains = [
+        {"Strain": STRAIN_1.iri, "Chassis": DH5ALPHA.iri, "Plasmids": [DNA_1.iri]},
+        {"Strain": STRAIN_2.iri, "Chassis": DH5ALPHA.iri, "Plasmids": [DNA_2.iri]},
+    ]
+    # Recovery media is grouped by the 300 µL tip rack this OT-2 protocol loads.
+    tiprack = "opentrons_96_tiprack_300ul"
+    protocol = build_transformation(
+        TransformationRequest(id="transformation", transformations=TRANSFORMATIONS),
+        replicates=REPLICATES,
+        transfer_volume_competent_cell=CELLS_PER_REACTION,
+        tube_volume_competent_cell=CELL_ALIQUOT,
+    )
+    ours = _log(_lab_source(protocol, transformation_deck(on_module=True)), tmp_path)
+    source = _protocol(
+        "strains = "
+        + json.dumps(strains)
+        + f"""
+def run(protocol: protocol_api.ProtocolContext):
+    from pudu.transformation import HeatShockTransformation
+    engine = HeatShockTransformation(
+        transformation_data=strains,
+        replicates={REPLICATES},
+        transfer_volume_competent_cell={int(magnitude(CELLS_PER_REACTION, "microliter"))},
+        tube_volume_competent_cell={int(magnitude(CELL_ALIQUOT, "microliter"))},
+        tiprack_p200_labware={tiprack!r},
     )
     engine.run(protocol)
     protocol.comment('HANDOFF ' + json.dumps(engine.dict_of_parts_in_thermocycler))
