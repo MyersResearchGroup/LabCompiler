@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +19,7 @@ from lab.experiments.cloning.types import (
     Assembly,
     AssemblyRequest,
     PlatingRequest,
+    Transformation,
     TransformationRequest,
 )
 from lab.model import Distribute, Mix, RecordedProtocol, TargetPlan, Transfer, encode
@@ -25,6 +27,7 @@ from lab.protocol import Protocol
 from lab.samples import Location, OutputManifest
 from lab.targets.liquid_handler import LiquidHandler
 from lab.targets.lower import lower_deck
+from lab.targets.manual import Manual
 from lab.validation import CompileError, logical_bindings, validate
 
 
@@ -41,6 +44,7 @@ class Compilation:
     protocol: RecordedProtocol
     target: TargetPlan
     final_volumes: tuple[tuple[Location, Decimal], ...]
+    directory: Path | None = None
 
     @property
     def manifest(self) -> OutputManifest:
@@ -100,60 +104,133 @@ class Compilation:
         return directory
 
 
+class _DefaultOutput:
+    """Marks compile's default output directory."""
+
+
+_DEFAULT_OUTPUT = _DefaultOutput()
+_BUNDLE_FILES = ("protocol.html", "plan.json", "manifest.json", "protocol.py")
+
+
+def _segment(value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("A compilation directory needs a protocol and target name.")
+    cleaned = value.replace("/", "_").replace("\\", "_").replace("\x00", "")
+    if cleaned in {"", ".", ".."}:
+        raise ValueError("A compilation directory needs a protocol and target name.")
+    return cleaned
+
+
+def _output_directory(
+    compilation: Compilation, to: str | Path | None | _DefaultOutput
+) -> Path | None:
+    if to is None:
+        return None
+    if isinstance(to, _DefaultOutput):
+        configured = os.environ.get("LAB_HOME")
+        root = Path(configured).expanduser() if configured else Path.home() / ".lab"
+        return root / _segment(compilation.protocol.name) / _segment(compilation.target.name)
+    return Path(to)
+
+
+def _write_output(directory: Path, files: dict[str, str]) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        (directory / name).write_text(text, encoding="utf-8")
+    for name in _BUNDLE_FILES:
+        path = directory / name
+        if name not in files and path.is_file():
+            path.unlink()
+
+
 @overload
 def compile(
     protocol: Protocol | Assembly | AssemblyRequest,
-    hardware: Target | Deck,
+    target: Target | None = None,
     *,
+    deck: Deck | None = None,
     liquid_handler: LiquidHandler | None = None,
     inputs: None = None,
+    to: str | Path | None = ...,
 ) -> Compilation: ...
 
 
 @overload
 def compile(
-    protocol: TransformationRequest,
-    hardware: Target | Deck,
+    protocol: Transformation | TransformationRequest,
+    target: Target | None = None,
     *,
+    deck: Deck | None = None,
     liquid_handler: LiquidHandler | None = None,
     inputs: OutputManifest | None = None,
+    to: str | Path | None = ...,
 ) -> Compilation: ...
 
 
 @overload
 def compile(
     protocol: PlatingRequest,
-    hardware: Target | Deck,
+    target: Target | None = None,
     *,
+    deck: Deck | None = None,
     liquid_handler: LiquidHandler | None = None,
     inputs: OutputManifest,
+    to: str | Path | None = ...,
 ) -> Compilation: ...
 
 
 def compile(
-    protocol: Protocol | Assembly | AssemblyRequest | TransformationRequest | PlatingRequest,
-    hardware: Target | Deck,
+    protocol: (
+        Protocol
+        | Assembly
+        | AssemblyRequest
+        | Transformation
+        | TransformationRequest
+        | PlatingRequest
+    ),
+    target: Target | None = None,
     *,
+    deck: Deck | None = None,
     liquid_handler: LiquidHandler | None = None,
     inputs: OutputManifest | None = None,
+    to: str | Path | None | _DefaultOutput = _DEFAULT_OUTPUT,
 ) -> Compilation:
-    """Compile a protocol or a cloning request for one piece of hardware.
+    """Compile a protocol or a cloning request.
 
     One assembly uses its id as the protocol name. An assembly request names a
-    protocol that holds every assembly. A transformation or plating request
-    takes ``inputs`` as the upstream manifest. A ``Deck`` contains shared
-    requirements and optional Lab-owned layouts. The selected backend validates
-    and translates its layout or supported preset. Concrete backend targets are
-    also accepted for low-level integrations. A document target such as
-    ``Manual()`` has no robot, so ``liquid_handler`` is omitted.
+    protocol that holds every assembly. One transformation uses its id as the
+    protocol name. A transformation or plating request takes ``inputs`` as the
+    upstream manifest. Leave out ``deck`` and ``liquid_handler`` for a manual
+    document. Pass ``deck`` with a liquid handler to compile for a robot. The
+    bundle is written to ``~/.lab/<protocol>/<target>/``, or to ``to``.
+    ``LAB_HOME`` replaces ``~/.lab``. ``to=None`` skips the write. A deck
+    contains shared requirements and optional Lab-owned layouts. The selected
+    backend validates and translates its layout or supported preset. Concrete
+    backend targets are also accepted for low-level integrations.
     """
-    if inputs is not None and not isinstance(protocol, (TransformationRequest, PlatingRequest)):
+    if isinstance(target, Deck):
+        raise TypeError("Pass a deck with deck=.")
+    if deck is not None and target is not None:
+        raise TypeError("Pass a target or a deck.")
+    if deck is None and target is None and liquid_handler is not None:
+        raise TypeError("Pass deck= with liquid_handler.")
+    hardware: Target | Deck = (
+        deck if deck is not None else target if target is not None else Manual()
+    )
+    if inputs is not None and not isinstance(
+        protocol, (Transformation, TransformationRequest, PlatingRequest)
+    ):
         raise TypeError("Pass inputs with a transformation or plating request.")
     work: Protocol
     if isinstance(protocol, Assembly):
         work = build_assembly(AssemblyRequest(id=protocol.id, assemblies=(protocol,)))
     elif isinstance(protocol, AssemblyRequest):
         work = build_assembly(protocol)
+    elif isinstance(protocol, Transformation):
+        work = build_transformation(
+            TransformationRequest(id=protocol.id, transformations=(protocol,)),
+            inputs=inputs,
+        )
     elif isinstance(protocol, TransformationRequest):
         work = build_transformation(protocol, inputs=inputs)
     elif isinstance(protocol, PlatingRequest):
@@ -197,4 +274,9 @@ def compile(
         configuration["lab_deck"] = encode(authored_deck)
         prepared = replace(prepared, configuration_json=json.dumps(configuration, sort_keys=True))
     volumes = validate(recorded, prepared.bindings)
-    return Compilation(recorded, prepared, tuple(volumes.items()))
+    compilation = Compilation(recorded, prepared, tuple(volumes.items()))
+    directory = _output_directory(compilation, to)
+    if directory is not None:
+        _write_output(directory, compilation.files)
+        compilation = replace(compilation, directory=directory)
+    return compilation

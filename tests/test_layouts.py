@@ -35,7 +35,7 @@ def test_layouts_keep_shared_requirements_and_select_the_requested_handler():
 def test_missing_layout_does_not_fall_back_to_another_handler():
     deck = replace(example_deck(), layouts=(star_layout(),))
     with pytest.raises(CompileError, match="No ot2 layout"):
-        compile(example_protocol(), deck, liquid_handler=LiquidHandler.OT2)
+        compile(example_protocol(), deck=deck, liquid_handler=LiquidHandler.OT2)
     with pytest.raises(CompileError, match="Provide a DeckLayout"):
         lower_deck(Deck(containers=deck.containers), LiquidHandler.STAR)
 
@@ -143,7 +143,7 @@ def test_requirements_are_checked_before_layout_translation():
     smaller = replace(deck.containers[1], labware=replace(deck.containers[1].labware, columns=1))
     deck = replace(deck, containers=(deck.containers[0], smaller, *deck.containers[2:]))
     with pytest.raises(ValueError, match="protocol geometry for assay"):
-        compile(example_protocol(), deck, liquid_handler=LiquidHandler.STAR)
+        compile(example_protocol(), deck=deck, liquid_handler=LiquidHandler.STAR)
     deck = example_deck()
     smaller = replace(
         deck.containers[0],
@@ -152,7 +152,7 @@ def test_requirements_are_checked_before_layout_translation():
     with pytest.raises(CompileError, match="capacity exceeds the deck limit for sources"):
         compile(
             example_protocol(),
-            replace(deck, containers=(smaller, *deck.containers[1:])),
+            deck=replace(deck, containers=(smaller, *deck.containers[1:])),
             liquid_handler=LiquidHandler.STAR,
         )
 
@@ -225,9 +225,11 @@ def test_star_thermal_steps_require_a_declared_handoff():
     protocol.container("working_reagent", capacity=15000 * uL)
     protocol.set_temperature(assay, celsius(4))
     with pytest.raises(CompileError, match="declared external thermal handoff"):
-        compile(protocol, example_deck(), liquid_handler=LiquidHandler.STAR)
+        compile(protocol, deck=example_deck(), liquid_handler=LiquidHandler.STAR)
     layout = replace(star_layout(), external_thermal_resources=("assay",))
     bundle = compile(
-        protocol, replace(example_deck(), layouts=(layout,)), liquid_handler=LiquidHandler.STAR
+        protocol,
+        deck=replace(example_deck(), layouts=(layout,)),
+        liquid_handler=LiquidHandler.STAR,
     )
     assert "Supply an async thermocycle callback" in bundle.files["protocol.py"]

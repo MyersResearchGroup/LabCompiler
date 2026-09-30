@@ -219,7 +219,7 @@ async def test_star_example_preserves_supplied_carriers_sites_and_well_bindings(
     source_location = source.get_absolute_location()
     assay_location = assay.get_absolute_location()
     expected_placements = placements(hardware.deck)
-    bundle = lab.compile(example_protocol(), deck, liquid_handler=LiquidHandler.STAR)
+    bundle = lab.compile(example_protocol(), deck=deck, liquid_handler=LiquidHandler.STAR)
     configuration = json.loads(bundle.plan_json)["target"]["configuration"]
     saved_deck = Resource.deserialize(json.loads(configuration["deck_json"]))
     assert placements(saved_deck) == expected_placements
@@ -267,7 +267,7 @@ async def test_star_example_preserves_supplied_carriers_sites_and_well_bindings(
 @requires_opentrons
 @pytest.mark.parametrize("handler", [LiquidHandler.OT2, LiquidHandler.FLEX])
 def test_same_lab_deck_compiles_for_opentrons(handler):
-    bundle = lab.compile(example_protocol(), example_deck(), liquid_handler=handler)
+    bundle = lab.compile(example_protocol(), deck=example_deck(), liquid_handler=handler)
     log, _ = simulate(StringIO(bundle.files["protocol.py"]))
     aspirations = [
         event["payload"]["text"]
@@ -311,7 +311,7 @@ def test_ambient_plate_preset_remains_portable(handler):
             Container(id="aliquots", labware=PLATE_96, site=DeckSite.PLATES),
         )
     )
-    bundle = lab.compile(water_aliquots(), deck, liquid_handler=handler)
+    bundle = lab.compile(water_aliquots(), deck=deck, liquid_handler=handler)
     assert dict(bundle.final_volumes)[Location("water", "A1")] == 100
 
 
@@ -345,7 +345,9 @@ def test_lab_layout_supports_two_independent_temperature_modules():
         block = protocol.plate(name, shape=(4, 6), capacity=1500 * uL)
         protocol.set_temperature(block, celsius(4))
     bundle = lab.compile(
-        protocol, Deck(containers=containers, layouts=(layout,)), liquid_handler=LiquidHandler.OT2
+        protocol,
+        deck=Deck(containers=containers, layouts=(layout,)),
+        liquid_handler=LiquidHandler.OT2,
     )
     simulate(StringIO(bundle.files["protocol.py"]))
     assert "temperature_module_1.set_temperature(4)" in bundle.files["protocol.py"]
@@ -389,9 +391,9 @@ def test_lab_thermocycler_layout_reserves_all_occupied_slots(source_slot):
     )
     if source_slot == "8":
         with pytest.raises(CompileError, match="Unavailable OT-2 deck slot: 8"):
-            lab.compile(p, deck, liquid_handler=LiquidHandler.OT2)
+            lab.compile(p, deck=deck, liquid_handler=LiquidHandler.OT2)
     else:
-        bundle = lab.compile(p, deck, liquid_handler=LiquidHandler.OT2)
+        bundle = lab.compile(p, deck=deck, liquid_handler=LiquidHandler.OT2)
         simulate(StringIO(bundle.files["protocol.py"]))
 
 

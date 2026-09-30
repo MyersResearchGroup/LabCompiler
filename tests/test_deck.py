@@ -120,4 +120,4 @@ def test_star_cold_block_preset_requires_lab_equipment_configuration(entrypoint)
         if entrypoint == "lower":
             lower_deck(deck, LiquidHandler.STAR)
         else:
-            compile(protocol, deck, liquid_handler=LiquidHandler.STAR)
+            compile(protocol, deck=deck, liquid_handler=LiquidHandler.STAR)

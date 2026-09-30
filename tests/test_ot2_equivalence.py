@@ -118,7 +118,7 @@ def _protocol(body: str) -> str:
 
 
 def _lab_source(protocol, deck) -> str:
-    return lab.compile(protocol, deck, liquid_handler=LiquidHandler.OT2).files["protocol.py"]
+    return lab.compile(protocol, deck=deck, liquid_handler=LiquidHandler.OT2).files["protocol.py"]
 
 
 def _assert_product_locations(

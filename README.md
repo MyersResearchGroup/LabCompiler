@@ -32,40 +32,32 @@ Use `"lab-compiler[opentrons,star]"` to install both SDKs.
 
 ## Write a protocol
 
-You define the strain, chassis, and plasmids in a typed request, then compile that request for the selected target. This example compiles a heat-shock transformation using material identifiers supplied by the user.
+You define the strain, chassis, and plasmids, then compile that transformation for the selected target. This example compiles a heat-shock transformation using material identifiers supplied by the user.
 
 ```python
 from lab import compile
 from lab.equipment import LiquidHandler
 from lab.experiments.cloning import (
     Transformation,
-    TransformationRequest,
     transformation_deck,
 )
 from lab.part import Part
 
-request = TransformationRequest(
-    id="my-transformation",
-    transformations=(
-        Transformation(
-            id="transformation-1",
-            strain=Part("https://example.org/my-strain/1"),
-            chassis=Part("https://example.org/my-cells/1"),
-            plasmids=[Part("https://example.org/my-plasmid/1")],
-        ),
+compile(
+    Transformation(
+        id="transformation-1",
+        strain=Part("https://example.org/my-strain/1"),
+        chassis=Part("https://example.org/my-cells/1"),
+        plasmids=[Part("https://example.org/my-plasmid/1")],
     ),
-)
-compiled = compile(
-    request,
-    hardware=transformation_deck(on_module=True),
+    deck=transformation_deck(on_module=True),
     liquid_handler=LiquidHandler.OT2,
 )
-compiled.write("build/transformation")
 ```
 
-`compile` accepts an `Assembly`, an `AssemblyRequest`, a `TransformationRequest`, or a `PlatingRequest`. One assembly is a protocol named by `assembly.id`. An `AssemblyRequest` names a protocol that holds several assemblies. `Transformation` names an output strain, its chassis, and its plasmids as `Part` IRIs. Compilation assigns logical wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials, assemblies, and transformations directly and links assembly, transformation, and plating.
+`compile` accepts an `Assembly`, an `AssemblyRequest`, a `Transformation`, a `TransformationRequest`, or a `PlatingRequest`. One assembly is a protocol named by `assembly.id`. One transformation is a protocol named by `transformation.id`. An `AssemblyRequest` names a protocol that holds several assemblies, and a `TransformationRequest` does the same for several transformations. `Transformation` names an output strain, its chassis, and its plasmids as `Part` IRIs. Compilation assigns logical wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials, assemblies, and transformations directly and links assembly, transformation, and plating.
 
-`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2`. For a document with no robot, import `Manual` from `lab.targets` and use `compile(request, Manual())`.
+`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2` and writes the bundle to `~/.lab/transformation-1/OT-2/`. Leave out `deck` and `liquid_handler` for a document with no robot. That writes `~/.lab/transformation-1/Manual/`.
 
 `lab.compile()` lays out a cloning request, then snapshots its operations, samples, lineage, and output placements, validates them, and produces one `Compilation`. A `Protocol` compiles the same way. Inspect `compiled.protocol` for that recorded snapshot. Hardware targets consume the same recorded operations used by the document renderer. `build_assembly`, `build_transformation`, and `build_plating` return the `Protocol` when you want it before choosing a target.
 
@@ -154,7 +146,7 @@ from examples.deck_layouts import deck, protocol
 from lab import compile
 from lab.equipment import LiquidHandler
 
-compiled = compile(protocol(), deck(), liquid_handler=LiquidHandler.STAR)
+compiled = compile(protocol(), deck=deck(), liquid_handler=LiquidHandler.STAR)
 ```
 
 The compiler rejects missing layouts, conflicting placements, invalid holder references, incompatible labware, and unsupported target features. It preserves the authored Lab deck in `plan.json` alongside the resolved backend configuration. Physical geometry comes from the selected equipment definitions; the STAR backend constructs and serializes the PyLabRobot resource hierarchy internally.
@@ -180,7 +172,9 @@ Use `manual` or `ot2` for the cloning example. Its assembly recipe includes tran
 
 The cloning example writes separate `assembly`, `transformation`, and `plating` bundles under `build/cloning/<target>`, including for the manual target. The deck layouts example writes to `build/decks/<target>`. Both accept `--out` to choose a different output directory. Compilation never connects to hardware.
 
-`Compilation.write()` writes these files:
+`compile()` writes the bundle to `~/.lab/<protocol>/<target>/`. `LAB_HOME` replaces `~/.lab`, and `to` chooses another directory. `to=None` returns the compilation without writing. Compiling the same protocol and target again replaces that bundle.
+
+`Compilation.write()` writes these files to a chosen directory:
 
 | File | Contents | When written |
 | --- | --- | --- |

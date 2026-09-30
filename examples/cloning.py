@@ -16,7 +16,7 @@ from lab.experiments.cloning import (
     transformation_deck,
 )
 from lab.part import Part
-from lab.targets import LiquidHandler, Manual
+from lab.targets import LiquidHandler
 
 PSB1C3 = Part("https://sbolcanvas.org/pSB1C3/1")
 J23101 = Part("https://sbolcanvas.org/J23101/1")
@@ -92,12 +92,12 @@ def main() -> None:
     liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
     assembled = compile(
         AssemblyRequest(id="sbol-loop-assembly", assemblies=ASSEMBLIES),
-        hardware=Manual() if liquid_handler is None else assembly_deck(),
+        deck=None if liquid_handler is None else assembly_deck(),
         liquid_handler=liquid_handler,
     )
     transformed = compile(
         TransformationRequest(id="heat-shock", transformations=STRAINS),
-        hardware=Manual() if liquid_handler is None else transformation_deck(),
+        deck=None if liquid_handler is None else transformation_deck(),
         liquid_handler=liquid_handler,
         inputs=assembled.manifest,
     )
@@ -107,7 +107,7 @@ def main() -> None:
             sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
             source_stage_id=transformed.manifest.protocol_id,
         ),
-        hardware=Manual() if liquid_handler is None else plating_deck(),
+        deck=None if liquid_handler is None else plating_deck(),
         liquid_handler=liquid_handler,
         inputs=transformed.manifest,
     )

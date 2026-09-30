@@ -20,11 +20,10 @@ def simple():
     return p, a, b
 
 
-def test_compile_requires_hardware_and_a_matching_liquid_handler():
+def test_compile_defaults_to_manual_and_rejects_a_positional_deck():
     p, a, b = simple()
     p.transfer(a, b, volume=1 * uL)
-    with pytest.raises(TypeError):
-        lab.compile(p)
+    assert lab.compile(p, to=None).target.name == "Manual"
     with pytest.raises(TypeError):
         lab.compile(p, Manual(), liquid_handler="ot2")
 
@@ -69,6 +68,24 @@ def test_snapshot_and_artifacts_are_detached(tmp_path):
     with pytest.raises(FileExistsError):
         lab.compile(p, Manual()).write(tmp_path / "artifact")
     assert (tmp_path / "artifact/plan.json").read_text() == original["plan.json"]
+
+
+def test_compile_writes_under_lab_home_and_can_skip_or_choose(tmp_path, monkeypatch):
+    monkeypatch.setenv("LAB_HOME", str(tmp_path))
+    protocol, source, destination = simple()
+    protocol.transfer(source, destination, volume=1 * uL)
+    compiled = lab.compile(protocol, Manual())
+    assert compiled.directory == tmp_path / "Water" / "Manual"
+    original = (compiled.directory / "plan.json").read_text()
+    protocol.transfer(source, destination, volume=1 * uL)
+    replaced = lab.compile(protocol, Manual())
+    assert (replaced.directory / "plan.json").read_text() != original
+    skipped = lab.compile(protocol, Manual(), to=None)
+    assert skipped.directory is None
+    chosen = tmp_path / "chosen"
+    explicit = lab.compile(protocol, Manual(), to=chosen)
+    assert explicit.directory == chosen
+    assert (chosen / "protocol.html").is_file()
 
 
 def test_checks_intermediate_state_before_later_replenishment():

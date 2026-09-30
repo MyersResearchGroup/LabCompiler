@@ -188,7 +188,7 @@ def main() -> None:
     )
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
-    bundle = compile(protocol(), deck(), liquid_handler=LiquidHandler(args.target))
+    bundle = compile(protocol(), deck=deck(), liquid_handler=LiquidHandler(args.target))
     print(bundle.write(args.out or f"build/decks/{args.target}"))
 
 

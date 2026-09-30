@@ -129,20 +129,15 @@ def test_compiled_requests_link_stages_through_the_snapshot():
 
 
 def test_transformation_uses_caller_defined_materials():
-    request = TransformationRequest(
+    transformation = Transformation(
         id="custom-transformation",
-        transformations=(
-            Transformation(
-                id="custom-transformation",
-                strain=Part("https://example.org/custom-strain/1"),
-                chassis=Part("https://example.org/custom-cells/1"),
-                plasmids=[Part("https://example.org/custom-plasmid/1")],
-            ),
-        ),
+        strain=Part("https://example.org/custom-strain/1"),
+        chassis=Part("https://example.org/custom-cells/1"),
+        plasmids=[Part("https://example.org/custom-plasmid/1")],
     )
-    compiled = lab.compile(request, Manual())
-    assert compiled.protocol.name == request.id
-    assert compiled.manifest.protocol_id == request.id
+    compiled = lab.compile(transformation, Manual())
+    assert compiled.protocol.name == transformation.id
+    assert compiled.manifest.protocol_id == transformation.id
     assert {sample.material_identity for sample in compiled.manifest.samples} == {"custom-strain"}
     assert {
         sample.material_identity for sample in compiled.protocol.samples if sample.role == "dna"
@@ -224,10 +219,12 @@ def test_chained_plan_requires_both_design_inputs(designs):
 
 def test_compiling_a_deck_requires_a_liquid_handler():
     protocol = golden_gate(ASSEMBLIES, STRAINS)
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="deck="):
         lab.compile(protocol, assembly_deck())
+    with pytest.raises(TypeError, match="liquid_handler"):
+        lab.compile(protocol, deck=assembly_deck())
     with pytest.raises(TypeError):
-        lab.compile(protocol, assembly_deck(), liquid_handler="ot2")  # type: ignore[arg-type]
+        lab.compile(protocol, deck=assembly_deck(), liquid_handler="ot2")  # type: ignore[arg-type]
 
 
 def test_cloning_deck_presets_lower_to_the_same_containers_for_opentrons():
@@ -296,7 +293,7 @@ def test_compiler_rejects_unsupported_star_preset_equipment():
     with pytest.raises(lab.CompileError, match="No STAR preset.*Lab DeckLayout"):
         lab.compile(
             AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES),
-            hardware=assembly_deck(),
+            deck=assembly_deck(),
             liquid_handler=LiquidHandler.STAR,
         )
 
