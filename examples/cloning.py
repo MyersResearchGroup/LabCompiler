@@ -12,9 +12,6 @@ from lab.experiments.cloning import (
     Transformation,
     TransformationRequest,
     assembly_deck,
-    build_assembly,
-    build_plating,
-    build_transformation,
     plating_deck,
     transformation_deck,
 )
@@ -94,29 +91,25 @@ def main() -> None:
     args = parser.parse_args()
     liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
     assembled = compile(
-        build_assembly(AssemblyRequest(id="sbol-loop-assembly", assemblies=ASSEMBLIES)),
+        AssemblyRequest(id="sbol-loop-assembly", assemblies=ASSEMBLIES),
         hardware=Manual() if liquid_handler is None else assembly_deck(),
         liquid_handler=liquid_handler,
     )
     transformed = compile(
-        build_transformation(
-            TransformationRequest(id="heat-shock", transformations=STRAINS),
-            inputs=assembled.manifest,
-        ),
+        TransformationRequest(id="heat-shock", transformations=STRAINS),
         hardware=Manual() if liquid_handler is None else transformation_deck(),
         liquid_handler=liquid_handler,
+        inputs=assembled.manifest,
     )
     plated = compile(
-        build_plating(
-            PlatingRequest(
-                id="plating",
-                sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
-                source_stage_id=transformed.manifest.protocol_id,
-            ),
-            inputs=transformed.manifest,
+        PlatingRequest(
+            id="plating",
+            sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
+            source_stage_id=transformed.manifest.protocol_id,
         ),
         hardware=Manual() if liquid_handler is None else plating_deck(),
         liquid_handler=liquid_handler,
+        inputs=transformed.manifest,
     )
     out = Path(args.out or f"build/cloning/{args.target}")
     for name, compiled in (

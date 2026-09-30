@@ -32,7 +32,7 @@ Use `"lab-compiler[opentrons,star]"` to install both SDKs.
 
 ## Write a protocol
 
-You define the strain, chassis, and plasmids in a typed request. An experiment builder turns that request into a `Protocol`, which you compile for the selected target. This example compiles a heat-shock transformation using material identifiers supplied by the user.
+You define the strain, chassis, and plasmids in a typed request, then compile that request for the selected target. This example compiles a heat-shock transformation using material identifiers supplied by the user.
 
 ```python
 from lab import compile
@@ -40,7 +40,6 @@ from lab.equipment import LiquidHandler
 from lab.experiments.cloning import (
     Transformation,
     TransformationRequest,
-    build_transformation,
     transformation_deck,
 )
 from lab.part import Part
@@ -56,28 +55,27 @@ request = TransformationRequest(
         ),
     ),
 )
-protocol = build_transformation(request)
 compiled = compile(
-    protocol,
+    request,
     hardware=transformation_deck(on_module=True),
     liquid_handler=LiquidHandler.OT2,
 )
 compiled.write("build/transformation")
 ```
 
-`Transformation` names an output strain, its chassis, and its plasmids as `Part` IRIs. The builder assigns logical wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials, assemblies, and transformations directly and links assembly, transformation, and plating.
+`compile` accepts an `Assembly`, an `AssemblyRequest`, a `TransformationRequest`, or a `PlatingRequest`. One assembly is a protocol named by `assembly.id`. An `AssemblyRequest` names a protocol that holds several assemblies. `Transformation` names an output strain, its chassis, and its plasmids as `Part` IRIs. Compilation assigns logical wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials, assemblies, and transformations directly and links assembly, transformation, and plating.
 
-`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2`. For a document with no robot, import `Manual` from `lab.targets` and use `compile(protocol, Manual())`.
+`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2`. For a document with no robot, import `Manual` from `lab.targets` and use `compile(request, Manual())`.
 
-Experiment builders such as `build_assembly`, `build_transformation`, and `build_plating` return an ordinary `Protocol`. `lab.compile()` snapshots its operations, samples, lineage, and output placements together, validates them, and produces one `Compilation`. Inspect `compiled.protocol` for that recorded snapshot. Hardware targets consume the same recorded operations used by the document renderer.
+`lab.compile()` lays out a cloning request, then snapshots its operations, samples, lineage, and output placements, validates them, and produces one `Compilation`. A `Protocol` compiles the same way. Inspect `compiled.protocol` for that recorded snapshot. Hardware targets consume the same recorded operations used by the document renderer. `build_assembly`, `build_transformation`, and `build_plating` return the `Protocol` when you want it before choosing a target.
 
 ## Samples and protocol outputs
 
-`compiled.manifest` is an `OutputManifest` containing the declared output samples and their logical placements. Pass an assembly's manifest as `inputs` to `build_transformation`, then pass the transformation's manifest as `inputs` to `build_plating` with a `PlatingRequest`. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) composes these builders directly, with a separate protocol and compilation for each stage.
+`compiled.manifest` is an `OutputManifest` containing the declared output samples and their logical placements. Pass an assembly's manifest as `inputs` when compiling a `TransformationRequest`, then pass the transformation's manifest as `inputs` when compiling a `PlatingRequest`. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) compiles each stage separately.
 
-The core cloning types live in `lab.experiments.cloning.types` and are exported from `lab.experiments.cloning`. `Assembly` describes a product and its constituent parts; `Transformation` describes a strain, its chassis, and its plasmids. `AssemblyRequest` groups assemblies, `TransformationRequest` groups transformations, and `PlatingRequest` selects and orders source samples by id for a stage builder.
+The core cloning types live in `lab.experiments.cloning.types` and are exported from `lab.experiments.cloning`. `Assembly` describes a product and its constituent parts; `Transformation` describes a strain, its chassis, and its plasmids. `AssemblyRequest` groups assemblies, `TransformationRequest` groups transformations, and `PlatingRequest` selects and orders source samples by id.
 
-The plating builder currently requires those ids to cover the entire input manifest. Transformation and plating each validate and interpret their input manifest for their own layout, which currently accepts a single source container. Their requests can optionally set `source_stage_id` to assert the expected input protocol; `AssemblyRequest` has no upstream input.
+A plating request's sample ids cover the entire input manifest. Transformation and plating each validate and interpret their input manifest for their own layout, which accepts a single source container. Their requests can set `source_stage_id` to assert the expected input protocol. `Assembly` and `AssemblyRequest` have no upstream input.
 
 For custom protocols, declare typed sample metadata with `protocol.add_sample(sample, at=well, is_input=True)` or `is_output=True`, using `Sample` from `lab.samples`. Loads and operations own volume accounting. Parent ids refer to samples in the same protocol; imported samples identify their upstream protocol and sample separately. Compilation checks sample references and locations and rejects cyclic lineage. Manifests describe planned outputs, not completed execution.
 

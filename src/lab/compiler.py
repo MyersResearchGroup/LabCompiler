@@ -5,12 +5,21 @@ import json
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 from typing import Protocol as Interface
 
 import lab.documents as documents
 from lab._version import __version__
 from lab.deck import Deck
+from lab.experiments.cloning.stages.assembly import build_assembly
+from lab.experiments.cloning.stages.plating import build_plating
+from lab.experiments.cloning.stages.transformation import build_transformation
+from lab.experiments.cloning.types import (
+    Assembly,
+    AssemblyRequest,
+    PlatingRequest,
+    TransformationRequest,
+)
 from lab.model import Distribute, Mix, RecordedProtocol, TargetPlan, Transfer, encode
 from lab.protocol import Protocol
 from lab.samples import Location, OutputManifest
@@ -91,17 +100,67 @@ class Compilation:
         return directory
 
 
+@overload
 def compile(
-    protocol: Protocol, hardware: Target | Deck, *, liquid_handler: LiquidHandler | None = None
-) -> Compilation:
-    """Compile offline for one piece of hardware.
+    protocol: Protocol | Assembly | AssemblyRequest,
+    hardware: Target | Deck,
+    *,
+    liquid_handler: LiquidHandler | None = None,
+    inputs: None = None,
+) -> Compilation: ...
 
-    A ``Deck`` contains shared requirements and optional Lab-owned layouts. The
-    selected backend validates and translates its layout or supported preset.
-    Concrete backend targets are also accepted for low-level integrations.
-    A document target such as ``Manual()`` has no robot, so ``liquid_handler`` is omitted.
+
+@overload
+def compile(
+    protocol: TransformationRequest,
+    hardware: Target | Deck,
+    *,
+    liquid_handler: LiquidHandler | None = None,
+    inputs: OutputManifest | None = None,
+) -> Compilation: ...
+
+
+@overload
+def compile(
+    protocol: PlatingRequest,
+    hardware: Target | Deck,
+    *,
+    liquid_handler: LiquidHandler | None = None,
+    inputs: OutputManifest,
+) -> Compilation: ...
+
+
+def compile(
+    protocol: Protocol | Assembly | AssemblyRequest | TransformationRequest | PlatingRequest,
+    hardware: Target | Deck,
+    *,
+    liquid_handler: LiquidHandler | None = None,
+    inputs: OutputManifest | None = None,
+) -> Compilation:
+    """Compile a protocol or a cloning request for one piece of hardware.
+
+    One assembly uses its id as the protocol name. An assembly request names a
+    protocol that holds every assembly. A transformation or plating request
+    takes ``inputs`` as the upstream manifest. A ``Deck`` contains shared
+    requirements and optional Lab-owned layouts. The selected backend validates
+    and translates its layout or supported preset. Concrete backend targets are
+    also accepted for low-level integrations. A document target such as
+    ``Manual()`` has no robot, so ``liquid_handler`` is omitted.
     """
-    recorded = protocol.snapshot()
+    if inputs is not None and not isinstance(protocol, (TransformationRequest, PlatingRequest)):
+        raise TypeError("Pass inputs with a transformation or plating request.")
+    work: Protocol
+    if isinstance(protocol, Assembly):
+        work = build_assembly(AssemblyRequest(id=protocol.id, assemblies=(protocol,)))
+    elif isinstance(protocol, AssemblyRequest):
+        work = build_assembly(protocol)
+    elif isinstance(protocol, TransformationRequest):
+        work = build_transformation(protocol, inputs=inputs)
+    elif isinstance(protocol, PlatingRequest):
+        work = build_plating(protocol, inputs=inputs)
+    else:
+        work = protocol
+    recorded = work.snapshot()
     authored_deck = hardware if isinstance(hardware, Deck) else None
     if isinstance(hardware, Deck):
         if not isinstance(liquid_handler, LiquidHandler):

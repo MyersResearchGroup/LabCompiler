@@ -16,8 +16,6 @@ from lab.experiments.cloning import (
     TransformationRequest,
     assembly_deck,
     build_assembly,
-    build_plating,
-    build_transformation,
     golden_gate,
     layout_assembly,
     layout_transformation,
@@ -89,9 +87,9 @@ def test_plating_stays_on_one_plate_until_a_half_is_full():
     assert plating_plates(49, 2, 1) == (True, True)
 
 
-def test_builders_link_stages_through_the_compiled_snapshot():
+def test_compiled_requests_link_stages_through_the_snapshot():
     assembled = lab.compile(
-        build_assembly(AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES)),
+        AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES),
         Manual(),
     )
     outputs = assembled.manifest
@@ -103,22 +101,18 @@ def test_builders_link_stages_through_the_compiled_snapshot():
     ] == [Location("products", "A1")]
     assert any(isinstance(step, Transfer) for step in assembled.protocol.steps)
     transformed = lab.compile(
-        build_transformation(
-            TransformationRequest(id="heat-shock", transformations=CLONING_STRAINS),
-            inputs=assembled.manifest,
-        ),
+        TransformationRequest(id="heat-shock", transformations=CLONING_STRAINS),
         Manual(),
+        inputs=assembled.manifest,
     )
     plated = lab.compile(
-        build_plating(
-            PlatingRequest(
-                id="plating",
-                sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
-                source_stage_id=transformed.manifest.protocol_id,
-            ),
-            inputs=transformed.manifest,
+        PlatingRequest(
+            id="plating",
+            sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
+            source_stage_id=transformed.manifest.protocol_id,
         ),
         Manual(),
+        inputs=transformed.manifest,
     )
     assert plated.manifest.samples
     assert {type(step) for step in plated.protocol.steps} >= {Transfer, Mix}
@@ -146,7 +140,8 @@ def test_transformation_uses_caller_defined_materials():
             ),
         ),
     )
-    compiled = lab.compile(build_transformation(request), Manual())
+    compiled = lab.compile(request, Manual())
+    assert compiled.protocol.name == request.id
     assert compiled.manifest.protocol_id == request.id
     assert {sample.material_identity for sample in compiled.manifest.samples} == {"custom-strain"}
     assert {
@@ -169,10 +164,8 @@ def test_assembly_accepts_unversioned_part_iris():
         restriction_enzyme=BSAI,
     )
     assert assembly.parts == (insert,)
-    compiled = lab.compile(
-        build_assembly(AssemblyRequest(id="example", assemblies=(assembly,))),
-        Manual(),
-    )
+    compiled = lab.compile(assembly, Manual())
+    assert compiled.protocol.name == assembly.id
     outputs = compiled.manifest
     locations = {placement.sample_id: placement.location for placement in outputs.placements}
     assert [
@@ -181,6 +174,21 @@ def test_assembly_accepts_unversioned_part_iris():
         if sample.material_identity == product.iri
     ] == [Location("products", "A1")]
     assert any(sample.label == "Restriction Enzyme BsaI" for sample in compiled.protocol.samples)
+
+
+def test_one_assembly_matches_its_request_and_rejects_inputs():
+    assembly = CLONING_ASSEMBLIES[0]
+    direct = lab.compile(assembly, Manual())
+    built = lab.compile(
+        build_assembly(AssemblyRequest(id=assembly.id, assemblies=(assembly,))),
+        Manual(),
+    )
+    assert direct.protocol.name == assembly.id
+    assert direct.digest == built.digest
+    with pytest.raises(TypeError, match="transformation or plating"):
+        lab.compile(assembly, Manual(), inputs=direct.manifest)
+    with pytest.raises(TypeError, match="transformation or plating"):
+        lab.compile(direct.protocol, Manual(), inputs=direct.manifest)
 
 
 def test_part_iri_and_part_sequence_are_checked():
@@ -287,7 +295,7 @@ def test_ot2_lowering_uses_the_cloning_slots():
 def test_compiler_rejects_unsupported_star_preset_equipment():
     with pytest.raises(lab.CompileError, match="No STAR preset.*Lab DeckLayout"):
         lab.compile(
-            build_assembly(AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES)),
+            AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES),
             hardware=assembly_deck(),
             liquid_handler=LiquidHandler.STAR,
         )
