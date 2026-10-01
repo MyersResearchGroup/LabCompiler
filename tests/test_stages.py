@@ -24,7 +24,7 @@ from lab.experiments.cloning import (
     transformation_deck,
 )
 from lab.experiments.cloning.addresses import well_name
-from lab.model import Mix, Transfer
+from lab.operations import Mix, Transfer
 from lab.part import Part
 from lab.samples import Location
 from lab.targets import Labware, LiquidHandler, Manual
@@ -137,7 +137,7 @@ def test_transformation_uses_caller_defined_materials():
     )
     compiled = lab.compile(transformation, Manual())
     assert compiled.protocol.name == transformation.id
-    assert compiled.manifest.protocol_id == transformation.id
+    assert compiled.manifest.protocol_id == compiled.protocol.identity
     assert {sample.material_identity for sample in compiled.manifest.samples} == {"custom-strain"}
     assert {
         sample.material_identity for sample in compiled.protocol.samples if sample.role == "dna"

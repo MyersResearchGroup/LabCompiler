@@ -25,20 +25,18 @@ from lab.deck import (
 from lab.documents import describe
 from lab.equipment import CarrierModel, LabwareModel, TipRackModel
 from lab.labware import LabwareKind
-from lab.model import (
-    Binding,
+from lab.model import RecordedProtocol, encode
+from lab.operations import (
     Distribute,
     ManualInstruction,
     Mix,
-    RecordedProtocol,
     SetTemperature,
-    TargetPlan,
     Thermocycle,
     Transfer,
     Wait,
-    encode,
 )
 from lab.samples import Location
+from lab.target import Binding, TargetPlan
 from lab.targets.liquid_handler import LiquidHandler
 from lab.units import magnitude, number, uL
 from lab.validation import CompileError, step_error
@@ -167,6 +165,7 @@ class STAR:
         commands = []
         tip_index = 0
         for index, step in enumerate(protocol.steps):
+            commands.append(f"# lab:step {step.identity}")
             if isinstance(step, (Thermocycle, SetTemperature)):
                 if (
                     self.external_thermal_resources is not None
@@ -201,12 +200,17 @@ class STAR:
                     f"await lh.pick_up_tips([deck.get_resource({spot.name!r})], {channels})"
                 )
                 if isinstance(step, Transfer):
+                    height = (
+                        ""
+                        if step.destination_height_mm is None
+                        else f", liquid_height=[{number(step.destination_height_mm)}]"
+                    )
                     commands.extend(
                         (
                             f"await lh.aspirate([{refs[step.source]}], "
                             f"vols=[{amount}], {channels})",
                             f"await lh.dispense([{refs[step.destination]}], "
-                            f"vols=[{amount}], {channels})",
+                            f"vols=[{amount}], {channels}{height})",
                         )
                     )
                 elif isinstance(step, Distribute):
@@ -259,11 +263,12 @@ class STAR:
                 if not isinstance(plate, ItemizedResource):
                     raise step_error(index, step, "A held temperature must bind a whole plate")
                 commands.append(
-                    f"await thermocycle(deck.get_resource({plate.name!r}), "
-                    f"profile=[({number(step.celsius)}, 0)], cycles=1, lid_temperature=None)"
+                    f"await set_temperature(deck.get_resource({plate.name!r}), "
+                    f"temperature={number(step.celsius)})"
                 )
             else:
                 raise step_error(index, step, "Unsupported step")
+            commands.append(f"# lab:end {step.identity}")
         initialize = []
         for resource in protocol.resources:
             fills = {fill.well: fill.volume for fill in resource.fills}
@@ -275,6 +280,8 @@ class STAR:
         has_thermal = any(
             isinstance(step, (Thermocycle, SetTemperature)) for step in protocol.steps
         )
+        has_cycle = any(isinstance(step, Thermocycle) for step in protocol.steps)
+        has_hold = any(isinstance(step, SetTemperature) for step in protocol.steps)
         thermal_import = "from inspect import iscoroutinefunction\n" if has_thermal else ""
         source = (
             '"""Generated PyLabRobot protocol. Direct execution uses a software backend."""\n\n'
@@ -285,7 +292,8 @@ class STAR:
             "from pylabrobot.resources import Resource\n\n"
             f"DECK_JSON = {serialized_deck!r}\n"
             f"SDK_VERSION = {version('pylabrobot')!r}\n\n"
-            "async def run(backend, *, confirm=None, thermocycle=None, sleep=asyncio.sleep):\n"
+            "async def run(backend, *, confirm=None, thermocycle=None, "
+            "set_temperature=None, sleep=asyncio.sleep):\n"
             "    if version('pylabrobot') != SDK_VERSION:\n"
             "        raise RuntimeError(f'This artifact requires pylabrobot=={SDK_VERSION}')\n"
         )
@@ -294,11 +302,17 @@ class STAR:
                 "    if confirm is None:\n"
                 "        raise ValueError('Supply confirm for explicit operator steps')\n"
             )
-        if has_thermal:
+        if has_cycle:
             source += (
                 "    if not iscoroutinefunction(thermocycle):\n"
                 "        raise ValueError('Supply an async thermocycle callback for the external "
                 "thermal device; it must return the plate to its original position')\n"
+            )
+        if has_hold:
+            source += (
+                "    if not iscoroutinefunction(set_temperature):\n"
+                "        raise ValueError('Supply an async set_temperature callback; "
+                "the hold must persist while the plate remains accessible for pipetting')\n"
             )
         source += (
             "    deck = Resource.deserialize(json.loads(DECK_JSON))\n"
@@ -310,13 +324,20 @@ class STAR:
             + "\n    finally:\n        await lh.stop()\n"
             "    return lh\n\n"
         )
-        if has_thermal:
+        if has_cycle:
             source += (
                 "async def preview_thermocycle(plate, *, profile, cycles, lid_temperature):\n"
                 "    print(f'Simulation only: thermal profile for {plate.name}: {profile}; "
                 "{cycles} cycles; lid {lid_temperature} C')\n\n"
             )
-        thermal_callback = ", thermocycle=preview_thermocycle" if has_thermal else ""
+        if has_hold:
+            source += (
+                "async def preview_set_temperature(plate, *, temperature):\n"
+                "    print(f'Simulation only: persistent hold for {plate.name}: "
+                "{temperature} C')\n\n"
+            )
+        thermal_callback = ", thermocycle=preview_thermocycle" if has_cycle else ""
+        thermal_callback += ", set_temperature=preview_set_temperature" if has_hold else ""
         source += (
             "if __name__ == '__main__':\n"
             "    asyncio.run(run(LiquidHandlerChatterboxBackend(), confirm=input"
@@ -437,7 +458,7 @@ def lower_layout(deck: Deck, layout: DeckLayout) -> STAR:
 
 
 def lower_deck(deck: Deck, *, volumes: tuple[Decimal, ...]) -> STAR:
-    """Resolve an ambient plate preset; other equipment needs a Lab DeckLayout."""
+    """Resolve plate carriers, with explicit runtime contracts for thermal plates."""
     if len(deck.containers) > 10:
         raise CompileError("The STAR plate preset holds at most ten plates; provide a DeckLayout.")
     placements = []
@@ -453,6 +474,7 @@ def lower_deck(deck: Deck, *, volumes: tuple[Decimal, ...]) -> STAR:
         if not isinstance(container, DeckContainer) or container.site not in (
             DeckSite.PLATES,
             DeckSite.MORE_PLATES,
+            DeckSite.THERMOCYCLER,
         ):
             raise CompileError(
                 f"No STAR preset for {container.id}; provide a Lab DeckLayout "
@@ -492,6 +514,11 @@ def lower_deck(deck: Deck, *, volumes: tuple[Decimal, ...]) -> STAR:
                 max_volume_ul=Decimal(50 if maximum <= 50 else 300),
                 tip_racks=("tips",),
             ),
+        ),
+        external_thermal_resources=tuple(
+            container.id
+            for container in deck.containers
+            if isinstance(container, DeckContainer) and container.site == DeckSite.THERMOCYCLER
         ),
     )
     return lower_layout(deck, layout)

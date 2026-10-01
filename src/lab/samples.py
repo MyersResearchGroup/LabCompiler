@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+from lab.inventory import MaterialForm
+from lab.provenance import Component, Implementation, Ref
+
 
 @dataclass(frozen=True)
 class Location:
@@ -16,6 +19,8 @@ class Location:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Sample:
+    """Material at a location; parent_ids are contributions, not genetic ancestry."""
+
     id: str
     material_identity: str
     label: str
@@ -26,8 +31,25 @@ class Sample:
     source_protocol_id: str | None = None
     contents: tuple[str, ...] = ()
     dilution: int | None = None
+    design: Ref[Component] | None = None
+    implementation: Ref[Implementation] | None = None
+    form: MaterialForm | None = None
+    count: int | None = None
 
     def __post_init__(self) -> None:
+        if self.form is not None and not isinstance(self.form, MaterialForm):
+            raise TypeError("Sample form must be a MaterialForm")
+        if self.form is not None and self.form.counted:
+            if type(self.count) is not int or self.count < 1:
+                raise ValueError("Counted samples need a positive integer count")
+        elif self.count is not None:
+            raise ValueError("Only counted material forms have a count")
+        if self.design is not None and (
+            not isinstance(self.design, Ref) or self.material_identity != self.design.identity
+        ):
+            raise ValueError("Sample material identity must match its design reference")
+        if self.implementation is not None and not isinstance(self.implementation, Ref):
+            raise TypeError("Sample implementation must be a reference")
         if not all(
             isinstance(value, str) and value.strip()
             for value in (self.id, self.material_identity, self.label, self.role)
@@ -91,9 +113,17 @@ class OutputManifest:
                 {
                     "sample_id": sample.id,
                     "material_identity": sample.material_identity,
+                    "design": None if sample.design is None else sample.design.identity,
+                    "implementation": (
+                        None if sample.implementation is None else sample.implementation.identity
+                    ),
                     "label": sample.label,
                     "parent_sample_ids": list(sample.parent_ids),
                     "replicate": sample.replicate,
+                    "role": sample.role,
+                    "form": None if sample.form is None else sample.form.value,
+                    "count": sample.count,
+                    "dilution": sample.dilution,
                     "source_sample_id": sample.source_sample_id,
                     "source_protocol_id": sample.source_protocol_id,
                     "contents": list(sample.contents),

@@ -3,8 +3,9 @@
 from html import escape
 from typing import Any
 
-from lab.model import (
+from lab.operations import (
     Distribute,
+    ExternalPreparation,
     ManualInstruction,
     Mix,
     SetTemperature,
@@ -18,8 +19,9 @@ from lab.units import number
 
 def describe(step: Step) -> str:
     match step:
-        case Transfer(source, destination, volume, _):
-            return f"Transfer {number(volume)} µL from {source} to {destination}."
+        case Transfer(source, destination, volume, _, height):
+            placement = "" if height is None else f" at {number(height)} mm above the well bottom"
+            return f"Transfer {number(volume)} µL from {source} to {destination}{placement}."
         case Distribute(source, destinations, volume, air_gap, _):
             wells = ", ".join(str(destination) for destination in destinations)
             gap = f" Air gap {number(air_gap)} µL." if air_gap is not None else ""
@@ -48,6 +50,22 @@ def describe(step: Step) -> str:
             return f"Hold {resource} at {number(celsius)} °C."
         case ManualInstruction(text, _):
             return f"Operator: {text}"
+        case ExternalPreparation(procedure, instructions, inputs, outputs, _):
+
+            def describe_ports(ports: tuple) -> str:
+                return "; ".join(
+                    f"{port.count} unit(s) at {port.location}"
+                    if port.count
+                    else f"{number(port.volume_ul)} µL at {port.location}"
+                    for port in ports
+                )
+
+            return (
+                f"External procedure <{procedure}>: {instructions} "
+                f"Consume {describe_ports(inputs)}. Expected output: {describe_ports(outputs)}. "
+                "Record completion and measured output before treating material "
+                "as available inventory."
+            )
         case _:
             raise TypeError(f"Unsupported step: {type(step).__name__}")
 
@@ -55,11 +73,23 @@ def describe(step: Step) -> str:
 def render(compilation: Any) -> str:
     p, target = compilation.protocol, compilation.target
     bindings = {binding.location: binding for binding in target.bindings}
+    samples = {sample.id: sample for sample in p.samples}
     resources = []
     for resource in p.resources:
         fills = (
             "; ".join(
-                f"{fill.well}: {fill.material}, {number(fill.volume)} µL" for fill in resource.fills
+                [
+                    f"{fill.well}: {fill.material}, {number(fill.volume)} µL"
+                    for fill in resource.fills
+                ]
+                + [
+                    f"{place.location.well}: {samples[place.sample_id].label}, "
+                    f"{samples[place.sample_id].count} unit(s)"
+                    for place in p.placements
+                    if place.location.resource == resource.name
+                    and place.sample_id in p.input_sample_ids
+                    and samples[place.sample_id].count is not None
+                ]
             )
             or "Initially empty"
         )
