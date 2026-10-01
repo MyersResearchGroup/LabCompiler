@@ -6,22 +6,12 @@ import os
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, overload
+from typing import Any
 from typing import Protocol as Interface
 
 import lab.documents as documents
 from lab._version import __version__
 from lab.deck import Deck
-from lab.experiments.cloning.stages.assembly import build_assembly
-from lab.experiments.cloning.stages.plating import build_plating
-from lab.experiments.cloning.stages.transformation import build_transformation
-from lab.experiments.cloning.types import (
-    Assembly,
-    AssemblyRequest,
-    PlatingRequest,
-    Transformation,
-    TransformationRequest,
-)
 from lab.model import Distribute, Mix, RecordedProtocol, TargetPlan, Transfer, encode
 from lab.protocol import Protocol
 from lab.samples import Location, OutputManifest
@@ -143,71 +133,23 @@ def _write_output(directory: Path, files: dict[str, str]) -> None:
             path.unlink()
 
 
-@overload
 def compile(
-    protocol: Protocol | Assembly | AssemblyRequest,
+    protocol: Protocol,
     target: Target | None = None,
     *,
     deck: Deck | None = None,
     liquid_handler: LiquidHandler | None = None,
-    inputs: None = None,
-    to: str | Path | None = ...,
-) -> Compilation: ...
-
-
-@overload
-def compile(
-    protocol: Transformation | TransformationRequest,
-    target: Target | None = None,
-    *,
-    deck: Deck | None = None,
-    liquid_handler: LiquidHandler | None = None,
-    inputs: OutputManifest | None = None,
-    to: str | Path | None = ...,
-) -> Compilation: ...
-
-
-@overload
-def compile(
-    protocol: PlatingRequest,
-    target: Target | None = None,
-    *,
-    deck: Deck | None = None,
-    liquid_handler: LiquidHandler | None = None,
-    inputs: OutputManifest,
-    to: str | Path | None = ...,
-) -> Compilation: ...
-
-
-def compile(
-    protocol: (
-        Protocol
-        | Assembly
-        | AssemblyRequest
-        | Transformation
-        | TransformationRequest
-        | PlatingRequest
-    ),
-    target: Target | None = None,
-    *,
-    deck: Deck | None = None,
-    liquid_handler: LiquidHandler | None = None,
-    inputs: OutputManifest | None = None,
     to: str | Path | None | _DefaultOutput = _DEFAULT_OUTPUT,
 ) -> Compilation:
-    """Compile a protocol or a cloning request.
+    """Snapshot and compile a protocol for a manual document or a robot.
 
-    One assembly uses its id as the protocol name. An assembly request names a
-    protocol that holds every assembly. One transformation uses its id as the
-    protocol name. A transformation or plating request takes ``inputs`` as the
-    upstream manifest. Leave out ``deck`` and ``liquid_handler`` for a manual
-    document. Pass ``deck`` with a liquid handler to compile for a robot. The
-    bundle is written to ``~/.lab/<protocol>/<target>/``, or to ``to``.
-    ``LAB_HOME`` replaces ``~/.lab``. ``to=None`` skips the write. A deck
-    contains shared requirements and optional Lab-owned layouts. The selected
-    backend validates and translates its layout or supported preset. Concrete
-    backend targets are also accepted for low-level integrations.
+    Experiment builders produce the protocol before target selection. Pass
+    ``deck`` with a liquid handler for a robot, or omit both for a manual document.
+    Bundles are written to ``~/.lab/<protocol>/<target>/``; ``LAB_HOME`` changes
+    that root, ``to`` selects a directory, and ``to=None`` skips writing.
     """
+    if not isinstance(protocol, Protocol):
+        raise TypeError("Compile a Protocol; use an experiment builder to turn designs into one.")
     if isinstance(target, Deck):
         raise TypeError("Pass a deck with deck=.")
     if deck is not None and target is not None:
@@ -217,27 +159,7 @@ def compile(
     hardware: Target | Deck = (
         deck if deck is not None else target if target is not None else Manual()
     )
-    if inputs is not None and not isinstance(
-        protocol, (Transformation, TransformationRequest, PlatingRequest)
-    ):
-        raise TypeError("Pass inputs with a transformation or plating request.")
-    work: Protocol
-    if isinstance(protocol, Assembly):
-        work = build_assembly(AssemblyRequest(id=protocol.id, assemblies=(protocol,)))
-    elif isinstance(protocol, AssemblyRequest):
-        work = build_assembly(protocol)
-    elif isinstance(protocol, Transformation):
-        work = build_transformation(
-            TransformationRequest(id=protocol.id, transformations=(protocol,)),
-            inputs=inputs,
-        )
-    elif isinstance(protocol, TransformationRequest):
-        work = build_transformation(protocol, inputs=inputs)
-    elif isinstance(protocol, PlatingRequest):
-        work = build_plating(protocol, inputs=inputs)
-    else:
-        work = protocol
-    recorded = work.snapshot()
+    recorded = protocol.snapshot()
     authored_deck = hardware if isinstance(hardware, Deck) else None
     if isinstance(hardware, Deck):
         if not isinstance(liquid_handler, LiquidHandler):

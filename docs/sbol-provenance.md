@@ -1,32 +1,49 @@
 # SBOL designs and provenance
 
-Use pySBOL3 directly to author, read, validate, and write SBOL documents. Its `Component` and `Sequence` describe biological designs. `Activity`, `Usage`, `Association`, `Agent`, and `Plan` represent provenance. Lab links protocol samples to these documents through identity strings.
+Use pySBOL3 to author, read, validate, and write biological designs and provenance. `Component` and `Sequence` describe designs; `Activity`, `Usage`, `Association`, `Agent`, and `Plan` describe their provenance. A collection of designs is an ordinary `sbol3.Document`, named `designs` in the examples.
+
+## Provide designs to an experiment
+
+Assembly and transformation recipes take native `sbol3.Component` objects. They can come from Python authoring or an existing SBOL file:
 
 ```python
 import sbol3
-from lab.samples import Sample
+from lab import compile
+from lab.experiments.cloning import Transformation, build_transformation
 
-design = sbol3.Component("https://example.org/project/design", sbol3.SBO_DNA)
-document = sbol3.Document()
-document.add(design)
-sample = Sample(
-    id="dna",
-    material_identity=design.identity,
-    label="Input DNA",
-    design=design.identity,
+designs = sbol3.Document()
+designs.read("designs.ttl")
+protocol = build_transformation(
+    [Transformation(
+        strain=designs.find("https://example.org/my_strain"),
+        chassis=designs.find("https://example.org/my_cells"),
+        plasmids=[designs.find("https://example.org/my_plasmid")],
+    )],
+    name="transformation",
 )
-assert not document.validate().errors
-document.write("designs.ttl", sbol3.TURTLE)
+compiled = compile(protocol, to=None)
 ```
 
-Pass full identities to pySBOL3 constructors to avoid a process-wide namespace. Use `document.find(identity)` to resolve local references and `document.validate()` for SBOL validation. The SBOL document belongs to the caller; Lab captures only identity strings in its existing immutable protocol snapshot.
+An `Assembly` names the product, backbone, parts, and restriction enzyme used by that procedure. A `Transformation` names the strain, chassis, and plasmids. These recipes specify procedure inputs; their components retain the full native SBOL API for sequences, features, roles, and provenance. Use `designs.validate()` to check the SBOL graph.
 
-`Sample.design` identifies the intended design and must match `material_identity`. `Sample.implementation` optionally identifies a supplied material record. Both fields require absolute IRIs. They are included in the compilation's plan and output manifest. Lab neither fetches referenced documents nor embeds them automatically.
+`build_assembly()` and `build_transformation()` copy component identities and names into protocol samples. `build_plating()` consumes a preceding output manifest and preserves design links on its products. `lab.compile()` accepts only the resulting `Protocol`; it captures the immutable snapshot internally. The compiler does not select an experiment from a biological design.
 
-Typed cloning requests preserve full part IRIs through assembly, transformation, and plating. Importing an upstream sample preserves its annotations; declaring a new product preserves its intended design without asserting a physical implementation. Parent sample IDs describe material contributions, not genetic ancestry.
+## Preserve identity and provenance
 
-The [example](../examples/sbol_provenance.py) records computational design creation with native SBOL provenance objects, then authors a planned aliquot protocol. Its short sequence and quantities are synthetic software inputs. The design activity describes document authoring; it does not claim laboratory execution.
+`Sample.design` identifies the intended design and must match `material_identity`. `Sample.implementation` optionally identifies a supplied material record. Both fields contain absolute IRI strings and are included in the plan and output manifest. Builders retain no mutable SBOL objects in the protocol snapshot.
+
+An imported sample retains its upstream annotations. A new product carries its intended design without asserting a physical implementation. Parent sample IDs describe material contributions, not genetic ancestry. Native SBOL provenance stays in the caller-owned `designs` container; references do not automatically fetch or embed other documents.
+
+Use full SBOL3 identities when authoring objects, such as `https://example.org/dna_1`, to avoid global namespace settings. The final segment must be a valid SBOL display ID. Write designs alongside compilation artifacts with `designs.write("designs.ttl", sbol3.TURTLE)`.
+
+## Examples
+
+[transformation.py](../examples/transformation.py) compiles native SBOL designs with explicit procedure quantities. [cloning.py](../examples/cloning.py) carries those identities through assembly, transformation, and plating. Both save the native SBOL graph alongside their artifacts.
+
+[sbol_provenance.py](../examples/sbol_provenance.py) records computational design creation with SBOL provenance objects, then authors a planned aliquot protocol. Its sequence and quantities are synthetic inputs; its activity describes design authoring, not laboratory execution.
 
 ```sh
 uv run python -m examples.sbol_provenance --out build/sbol_provenance
+uv run python -m examples.cloning --target manual --out build/cloning
+uv run --extra opentrons python -m examples.transformation
 ```

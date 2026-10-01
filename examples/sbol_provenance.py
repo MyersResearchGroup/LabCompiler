@@ -26,8 +26,8 @@ def inputs() -> tuple[sbol3.Document, lab.Protocol]:
         sequences=[sequence],
         generated_by=[activity],
     )
-    document = sbol3.Document()
-    document.add([sequence, author, activity, design])
+    designs = sbol3.Document()
+    designs.add([sequence, author, activity, design])
     protocol = lab.Protocol("Annotated aliquot")
     plate = protocol.plate("plate", capacity=100 * lab.uL)
     protocol.load(plate["A1"], design.identity, volume=20 * lab.uL)
@@ -48,17 +48,17 @@ def inputs() -> tuple[sbol3.Document, lab.Protocol]:
         is_output=True,
     )
     protocol.transfer(plate["A1"], plate["A2"], volume=2 * lab.uL)
-    return document, protocol
+    return designs, protocol
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path("build/sbol_provenance"))
     args = parser.parse_args()
-    document, protocol = inputs()
-    assert not document.validate().errors
+    designs, protocol = inputs()
+    assert not designs.validate().errors
     output = lab.compile(protocol, to=None).write(args.out)
-    document.write(str(output / "designs.ttl"), sbol3.TURTLE)
+    designs.write(str(output / "designs.ttl"), sbol3.TURTLE)
     print(output)
 
 

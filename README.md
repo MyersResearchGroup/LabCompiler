@@ -32,46 +32,44 @@ Use `"lab-compiler[opentrons,star]"` to install both SDKs.
 
 ## Write a protocol
 
-You define the strain, chassis, and plasmids, then compile that transformation for the selected target. This example compiles a heat-shock transformation using material identifiers supplied by the user.
+Describe biological designs with native pySBOL3 components. An experiment builder records their laboratory operations in a `Protocol`, and `compile()` validates and compiles that protocol for the selected target.
 
 ```python
+import sbol3
 from lab import compile
 from lab.equipment import LiquidHandler
-from lab.experiments.cloning import (
-    Transformation,
-    transformation_deck,
-)
-from lab.part import Part
+from lab.experiments.cloning import Transformation, build_transformation, transformation_deck
 
-compile(
-    Transformation(
-        id="transformation-1",
-        strain=Part("https://example.org/my-strain/1"),
-        chassis=Part("https://example.org/my-cells/1"),
-        plasmids=[Part("https://example.org/my-plasmid/1")],
-    ),
+designs = sbol3.Document()
+strain = sbol3.Component("https://example.org/my_strain", sbol3.SBO_FUNCTIONAL_ENTITY)
+chassis = sbol3.Component("https://example.org/my_cells", sbol3.SBO_FUNCTIONAL_ENTITY)
+plasmid = sbol3.Component("https://example.org/my_plasmid", sbol3.SBO_DNA)
+designs.add([strain, chassis, plasmid])
+
+protocol = build_transformation(
+    [Transformation(strain=strain, chassis=chassis, plasmids=[plasmid])],
+    name="transformation",
+)
+compiled = compile(
+    protocol,
     deck=transformation_deck(on_module=True),
     liquid_handler=LiquidHandler.OT2,
 )
 ```
 
-`compile` accepts an `Assembly`, an `AssemblyRequest`, a `Transformation`, a `TransformationRequest`, or a `PlatingRequest`. One assembly is a protocol named by `assembly.id`. One transformation is a protocol named by `transformation.id`. An `AssemblyRequest` names a protocol that holds several assemblies, and a `TransformationRequest` does the same for several transformations. `Transformation` names an output strain, its chassis, and its plasmids as `Part` IRIs. Compilation assigns logical wells and records the transfers, heat shock, and recovery steps. The result includes an output manifest for downstream stages. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) defines its materials, assemblies, and transformations directly and links assembly, transformation, and plating.
+`lab.compile()` accepts a `Protocol`. It captures an immutable snapshot, validates resources and volumes, prepares the target, and returns one `Compilation`. Inspect `compiled.protocol` for the captured snapshot. All targets and the document renderer consume those same recorded operations.
 
-`transformation_deck(on_module=True)` names the 24-well DNA block, the cell tubes, and the reaction plate. This is an Opentrons preset; the example uses `LiquidHandler.OT2` and writes the bundle to `~/.lab/transformation-1/OT-2/`. Leave out `deck` and `liquid_handler` for a document with no robot. That writes `~/.lab/transformation-1/Manual/`.
+`build_assembly()` takes a sequence of `Assembly` recipes; `build_transformation()` takes a sequence of `Transformation` recipes. Their design fields are native `sbol3.Component` objects, including components loaded from an SBOL file with `designs.read()`. Recipe fields specify the materials used by the procedure; SBOL owns their biological descriptions. Builders copy identities into protocol samples so later edits to SBOL objects cannot change the recorded plan.
 
-`lab.compile()` lays out a cloning request, then snapshots its operations, samples, lineage, and output placements, validates them, and produces one `Compilation`. A `Protocol` compiles the same way. Inspect `compiled.protocol` for that recorded snapshot. Hardware targets consume the same recorded operations used by the document renderer. `build_assembly`, `build_transformation`, and `build_plating` return the `Protocol` when you want it before choosing a target.
+`transformation_deck(on_module=True)` names the DNA block, cell tubes, and reaction plate. The example writes to `~/.lab/transformation/OT-2/`. Omit `deck` and `liquid_handler` for a manual document. Set `to` to choose an output directory, or `to=None` to compile without writing. The [transformation example](examples/transformation.py) uses native SBOL designs and explicit procedure quantities.
 
 ## Samples and protocol outputs
 
-`compiled.manifest` is an `OutputManifest` containing the declared output samples and their logical placements. Pass an assembly's manifest as `inputs` when compiling a `TransformationRequest`, then pass the transformation's manifest as `inputs` when compiling a `PlatingRequest`. The [cloning example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/cloning.py) compiles each stage separately.
+`compiled.manifest` contains declared output samples and logical placements. Pass it as `inputs=` to `build_transformation()`, then pass the resulting transformation manifest to `build_plating()`. The [cloning example](examples/cloning.py) shows assembly, transformation, and plating as separately authored and compiled protocols. Plating processes the manifest's samples in their declared order. Both downstream builders require their source samples to occupy one logical container.
 
-The core cloning types live in `lab.experiments.cloning.types` and are exported from `lab.experiments.cloning`. `Assembly` describes a product and its constituent parts; `Transformation` describes a strain, its chassis, and its plasmids. `AssemblyRequest` groups assemblies, `TransformationRequest` groups transformations, and `PlatingRequest` selects and orders source samples by id.
+For custom protocols, use `protocol.add_sample(sample, at=well, is_input=True)` or `is_output=True`. `Sample.design` and `Sample.implementation` hold optional SBOL identity strings. Parent IDs identify contributions in the same protocol; imported samples identify their upstream protocol and sample separately. Compilation checks references, locations, and cyclic lineage. Manifests describe planned outputs.
 
-A plating request's sample ids cover the entire input manifest. Transformation and plating each validate and interpret their input manifest for their own layout, which accepts a single source container. Their requests can set `source_stage_id` to assert the expected input protocol. `Assembly` and `AssemblyRequest` have no upstream input.
-
-For custom protocols, declare typed sample metadata with `protocol.add_sample(sample, at=well, is_input=True)` or `is_output=True`, using `Sample` from `lab.samples`. Loads and operations own volume accounting. Parent ids refer to samples in the same protocol; imported samples identify their upstream protocol and sample separately. Compilation checks sample references and locations and rejects cyclic lineage. Manifests describe planned outputs, not completed execution.
-
-`lab.samples` also defines `Location(resource, well)`, `SamplePlacement`, and `OutputManifest`. Recorded operations, sample placements, target bindings, and final volume accounting use the same logical `Location` type. For example, an output placement's `location` can be used directly as a key in `dict(compiled.final_volumes)`. `lab.part.Part` identifies a biological part by its SBOL IRI; cloning types and stage builders live under `lab.experiments.cloning`.
+`lab.samples` also defines `Location(resource, well)`, `SamplePlacement`, and `OutputManifest`. Recorded operations, samples, target bindings, and volume accounting share that logical location type. Native SBOL documents remain caller-owned and can be written alongside the compilation artifacts.
 
 ## SBOL provenance
 
