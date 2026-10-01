@@ -4,11 +4,12 @@ import argparse
 from pathlib import Path
 
 import lab
+from integrations.labop.export import export_file
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("build/labop_export"))
+    parser.add_argument("--out", type=Path, default=Path("build/labop"))
     args = parser.parse_args()
     protocol = lab.Protocol("LabOP operations")
     plate = protocol.plate("operations", capacity=100 * lab.uL)
@@ -28,7 +29,7 @@ def main() -> None:
         block_volume=10 * lab.uL,
     )
     output = lab.compile(protocol, to=None).write(args.out)
-    print(output / "plan.json")
+    print(export_file(output / "plan.json"))
 
 
 if __name__ == "__main__":

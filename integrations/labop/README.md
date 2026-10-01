@@ -6,19 +6,18 @@ Install the integration from a checkout, using a separate Python 3.11 or 3.12 en
 
 ```sh
 python3.12 -m venv integrations/labop/.venv
-integrations/labop/.venv/bin/python -m pip install -r integrations/labop/requirements.txt
+integrations/labop/.venv/bin/python -m pip install -e . -r integrations/labop/requirements.txt
 ```
 
 The upstream revision and direct compatibility dependencies are pinned in `requirements.txt`. This environment uses `pip` because upstream's container-ontology URL is not accepted by `uv`. Upstream's transitive dependencies are not fully locked. Installation needs network access; export uses the installed libraries. This environment is separate because upstream import modifies pySBOL3's registrations, classes, and process logging.
 
-Compile with Lab, then export the saved artifact:
+Run the example to compile with Lab and write LabOP:
 
 ```sh
-uv run python -m examples.labop_export --out build/labop_export
-integrations/labop/.venv/bin/python integrations/labop/export.py build/labop_export/plan.json
+integrations/labop/.venv/bin/python -m examples.labop_export
 ```
 
-The second command writes `protocol.labop.ttl` beside the input. `--out path.ttl` selects another location. It refuses to replace a different existing artifact. Normal compilation emits `plan.json`, HTML, and target artifacts; LabOP is an explicit export step.
+The example writes `build/labop/protocol.labop.ttl` beside `plan.json` and `protocol.html`. `--out directory` selects another output directory. It refuses to replace a different existing artifact. Normal compilation emits `plan.json`, HTML, and target artifacts; LabOP is an explicit export step.
 
 The integration consumes only the protocol portion of `plan.json`. Target configuration and authoring file locations do not affect the exported identity. Samples retain SBOL design and implementation references. The RDF records the intended operations, initial resource metadata, and declared outputs; it records no execution or observed products.
 
@@ -33,7 +32,7 @@ Checks validate the constructed upstream document, operation parameters, control
 To check the integration against fresh compiler output:
 
 ```sh
-uv run python -m examples.labop_export --out build/labop_check/operations
+integrations/labop/.venv/bin/python -m examples.labop_export --out build/labop_check/operations
 uv run python -m examples.cloning --target manual --out build/labop_check/cloning
 integrations/labop/.venv/bin/python integrations/labop/check.py build/labop_check
 ```

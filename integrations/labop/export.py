@@ -217,19 +217,24 @@ def export(plan: dict[str, Any]) -> sbol3.Document:
     return document
 
 
+def export_file(plan: Path, output: Path | None = None) -> Path:
+    """Write LabOP beside a saved plan, refusing to replace a different artifact."""
+    document = export(json.loads(plan.read_text(encoding="utf-8")))
+    graph = to_canonical_graph(document.graph())
+    content = "\n".join(sorted(graph.serialize(format="nt").splitlines())) + "\n"
+    path = output or plan.with_name("protocol.labop.ttl")
+    if path.exists() and path.read_text(encoding="utf-8") != content:
+        raise FileExistsError(f"{path} already contains a different artifact")
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan", type=Path)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    document = export(json.loads(args.plan.read_text()))
-    graph = to_canonical_graph(document.graph())
-    output = "\n".join(sorted(graph.serialize(format="nt").splitlines())) + "\n"
-    path = args.out or args.plan.with_name("protocol.labop.ttl")
-    if path.exists() and path.read_text() != output:
-        raise FileExistsError(f"{path} already contains a different artifact")
-    path.write_text(output)
-    print(path)
+    print(export_file(args.plan, args.out))
 
 
 if __name__ == "__main__":

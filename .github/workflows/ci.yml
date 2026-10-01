@@ -52,14 +52,15 @@ jobs:
       - run: uv sync --locked
       - name: Generate compiler artifacts
         run: |
-          uv run --no-sync python -m examples.labop_export --out build/labop_check/operations
           uv run --no-sync python -m examples.cloning --target manual --out build/labop_check/cloning
       - name: Install upstream in a separate environment
         run: |
           uv run --no-sync python -m venv integrations/labop/.venv
-          integrations/labop/.venv/bin/python -m pip install -r integrations/labop/requirements.txt
+          integrations/labop/.venv/bin/python -m pip install -e . -r integrations/labop/requirements.txt
       - name: Check exported plans with upstream
-        run: integrations/labop/.venv/bin/python integrations/labop/check.py build/labop_check
+        run: |
+          integrations/labop/.venv/bin/python -m examples.labop_export --out build/labop_check/operations
+          integrations/labop/.venv/bin/python integrations/labop/check.py build/labop_check
 
   build:
     name: Build and check distributions
