@@ -240,6 +240,7 @@ def build_plating(
                     Sample(
                         id=f"colony-{dilution_index}-{index}-{replicate}",
                         material_identity=source.material_identity,
+                        design=source.design,
                         label=source.label,
                         parent_ids=(dilution.id,),
                         role="colony",

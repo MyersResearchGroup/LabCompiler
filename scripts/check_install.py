@@ -8,6 +8,8 @@ from importlib.resources import files
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import sbol3
+
 import lab
 from lab.targets import Manual
 
@@ -26,6 +28,10 @@ def main() -> None:
     assert any(str(path).endswith("licenses/LICENSE") for path in package.files or ())
     assert lab.__file__ is not None
     assert not Path(lab.__file__).resolve().is_relative_to(Path(__file__).resolve().parents[1])
+
+    document = sbol3.Document()
+    document.add(sbol3.Component("https://example.org/install_check/design", sbol3.SBO_DNA))
+    assert not document.validate().errors
 
     protocol = lab.Protocol("Installed package check")
     source = protocol.container(

@@ -146,8 +146,16 @@ def build_assembly(
     **params: object,
 ) -> Protocol:
     """A standalone assembly protocol whose plates are named ``reagents`` and ``products``."""
+    designs: dict[str, str] = {}
     if isinstance(assemblies, AssemblyRequest):
         name = assemblies.id
+        for assembly in assemblies.assemblies:
+            designs[assembly.product.iri] = assembly.product.iri
+            for part in (assembly.backbone, *assembly.parts):
+                label = uri_name(part.iri)
+                if label in designs and designs[label] != part.iri:
+                    raise ValueError(f"Two part IRIs extract to the same name {label!r}.")
+                designs[label] = part.iri
         assemblies = [
             {
                 "Product": assembly.product.iri,
@@ -165,7 +173,11 @@ def build_assembly(
     for index, material, volume in layout.stocks:
         protocol.load(well_at(reagents, index), material, volume=volume * uL)
         sample = Sample(
-            id=f"stock-{index}", material_identity=material, label=material, role="stock"
+            id=f"stock-{index}",
+            material_identity=designs.get(material, material),
+            label=material,
+            role="stock",
+            design=designs.get(material),
         )
         protocol.add_sample(sample, at=well_at(reagents, index), is_input=True)
         stock_ids[material] = sample.id
@@ -174,6 +186,7 @@ def build_assembly(
             Sample(
                 id=f"product-{reaction.destination}",
                 material_identity=reaction.product_key,
+                design=designs.get(reaction.product_key),
                 label=uri_name(reaction.product_key),
                 parent_ids=tuple(
                     dict.fromkeys(stock_ids[material] for material, _, _ in reaction.additions)

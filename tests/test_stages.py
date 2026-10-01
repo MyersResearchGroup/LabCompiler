@@ -138,10 +138,12 @@ def test_transformation_uses_caller_defined_materials():
     compiled = lab.compile(transformation, Manual())
     assert compiled.protocol.name == transformation.id
     assert compiled.manifest.protocol_id == transformation.id
-    assert {sample.material_identity for sample in compiled.manifest.samples} == {"custom-strain"}
+    assert {sample.material_identity for sample in compiled.manifest.samples} == {
+        transformation.strain.iri
+    }
     assert {
         sample.material_identity for sample in compiled.protocol.samples if sample.role == "dna"
-    } == {"custom-plasmid"}
+    } == {transformation.plasmids[0].iri}
     assert all(
         sample.contents[:3] == ("custom-strain", "Competent_Cell_custom-cells", "custom-plasmid")
         for sample in compiled.manifest.samples

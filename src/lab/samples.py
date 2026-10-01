@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from lab._identifiers import require_iri
+
 
 @dataclass(frozen=True)
 class Location:
@@ -26,8 +28,16 @@ class Sample:
     source_protocol_id: str | None = None
     contents: tuple[str, ...] = ()
     dilution: int | None = None
+    design: str | None = None
+    implementation: str | None = None
 
     def __post_init__(self) -> None:
+        if self.design is not None:
+            require_iri(self.design)
+            if self.material_identity != self.design:
+                raise ValueError("Sample material identity must match its design reference")
+        if self.implementation is not None:
+            require_iri(self.implementation)
         if not all(
             isinstance(value, str) and value.strip()
             for value in (self.id, self.material_identity, self.label, self.role)
@@ -91,6 +101,8 @@ class OutputManifest:
                 {
                     "sample_id": sample.id,
                     "material_identity": sample.material_identity,
+                    "design": sample.design,
+                    "implementation": sample.implementation,
                     "label": sample.label,
                     "parent_sample_ids": list(sample.parent_ids),
                     "replicate": sample.replicate,
