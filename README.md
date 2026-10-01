@@ -77,7 +77,7 @@ Protocol samples can link to native pySBOL3 designs and implementations by ident
 
 ## LabOP export
 
-`lab.labop.export(protocol)` emits a static LabOP plan directly from an authored or frozen protocol. Every compilation includes the same `protocol.labop.ttl`. See the [LabOP guide](docs/labop.md) or run `uv run python -m examples.labop_export`.
+The optional [LabOP integration](docs/labop.md) converts a compiled `plan.json` into a prospective LabOP protocol using upstream's Python library in a separate environment. Lab's installed package has no LabOP dependency or bundled schemas.
 
 ## Describe a deck
 
