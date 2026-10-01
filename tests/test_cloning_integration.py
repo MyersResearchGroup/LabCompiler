@@ -1,16 +1,14 @@
 from dataclasses import replace
-from datetime import UTC, datetime
 from decimal import Decimal
 from io import StringIO
 
 import pytest
 
 import lab
-from lab.execution import OutputRecord, Run, RunMode
 from lab.experiments import cloning
 from lab.inventory import CountedStock, MaterialForm
 from lab.operations import ExternalPreparation, Thermocycle, Transfer
-from lab.provenance import Agent, Component, Document, EvidenceState, Implementation
+from lab.provenance import Component, Document, EvidenceState, Implementation
 from lab.targets import LiquidHandler, Manual
 from tests.cloning_integration_fixture import integrated_case
 from tests.planning_fixture import NS
@@ -284,42 +282,6 @@ def test_count_targets_reuse_recorded_inventory_without_claiming_colonies():
     assert planned.ready and not planned.tasks
     assert planned.products[0].implementation == material.ref and planned.products[0].count == 2
     assert not doc.freeze().resolve(material.ref).built
-
-
-def test_counted_outputs_require_explicit_observations_and_preserve_units():
-    request, inputs = integrated_case(count=1)
-    compilation = lab.compile(cloning.build(cloning.plan(request, **inputs)), Manual())
-    planned = compilation.stages[-1].manifest.samples[0].implementation
-    start = datetime(2026, 9, 27, tzinfo=UTC)
-    person = Agent(identity=NS + "/operator")
-    run = Run(
-        compilation,
-        identity=NS + "/count_run",
-        mode=RunMode.PHYSICAL,
-        agent=person,
-        started_at=start,
-    )
-    output = OutputRecord(
-        planned=planned, identity=NS + "/observed_spot", observed_at=start, count=1
-    )
-    run.record_output(output)
-    record = run.finalize(ended_at=start)
-    assert not record.complete
-    observed = record.provenance.get(output.identity, Implementation)
-    assert observed.built is None and observed.evidence_state is EvidenceState.RECORDED
-    assert observed.measures[0].value == 1 and observed.measures[0].unit.endswith("/one")
-    assert record.provenance.resolve(planned).evidence_state is EvidenceState.PLANNED
-    assert "count 1" in record.files["methods.md"]
-    other = Run(
-        compilation,
-        identity=NS + "/wrong_units",
-        mode=RunMode.PHYSICAL,
-        agent=person,
-        started_at=start,
-    )
-    other.record_output(replace(output, count=None, volume_ul=Decimal(1)))
-    with pytest.raises(ValueError, match="quantity kind"):
-        other.finalize(ended_at=start)
 
 
 def test_external_preparation_needs_matching_quantity_kinds_and_explicit_target():

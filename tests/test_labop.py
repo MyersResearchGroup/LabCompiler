@@ -54,11 +54,21 @@ def artifact(*, operations=False):
     return experiment, export(experiment)
 
 
-def test_labop_has_protocols_exact_semantic_actions_and_no_execution_claims():
-    experiment, result = artifact()
+@pytest.mark.parametrize("operations", [False, True, "cloning"])
+def test_labop_has_protocols_exact_semantic_actions_and_no_execution_claims(operations):
+    experiment, result = artifact(operations=operations)
     graph = result.graph()
-    assert len(tuple(graph.subjects(RDF.type, LABOP.Protocol))) == 2
-    assert not tuple(graph.subjects(RDF.type, LABOP.ProtocolExecution))
+    assert len(tuple(graph.subjects(RDF.type, LABOP.Protocol))) == 1 + len(experiment.stages)
+    for kind in (
+        LABOP.ProtocolExecution,
+        LABOP.BehaviorExecution,
+        LABOP.ActivityNodeExecution,
+        LABOP.CallBehaviorExecution,
+        LABOP.ActivityEdgeFlow,
+    ):
+        assert not tuple(graph.subjects(RDF.type, kind))
+    for predicate in (LABOP.execution, LABOP.completedNormally):
+        assert not tuple(graph.triples((None, predicate, None)))
     assert {str(node) for node in graph.subjects(LAB.semanticStep)} == {
         step.identity for stage in experiment.stages for step in stage.protocol.steps
     }

@@ -427,7 +427,7 @@ def _stage(
                         "Perform the named external procedure using the declared material inputs. "
                         "Outputs specify expected quantities at distinct destination locations. "
                         "Counted amounts use OM one; liquid amounts use microlitres. "
-                        "This action requires operator execution and output observations."
+                        "This action specifies an operator-performed preparation."
                     ),
                 )
                 writer.parameter(primitive, "procedure", UML.ValueSpecification, 0)

@@ -1,7 +1,7 @@
 """Presentation helpers for the reporter-reference notebook.
 
-These functions inspect ordinary Lab objects and emitted files. They do not
-construct plans, change RDF assertions, or generate execution observations.
+These functions present ordinary Lab objects and emitted files as tables,
+diagrams, source excerpts, and selected RDF statements.
 """
 
 import hashlib

@@ -26,7 +26,6 @@ def main() -> None:
     import_module("lab.provenance")
     import_module("lab.inventory")
     import_module("lab.suppliers")
-    import_module("lab.execution")
     import_module("lab.labop")
 
     package = distribution("lab-compiler")

@@ -15,4 +15,4 @@ The names, receipt, lots, locations, and study are fictional. This case supplies
 
 The notebook reads these files directly using `Document.read`, `Inventory.read`, `CloningSystem.read`, and `CloningMethods.read`. It does not substitute objects held inside a display helper. The presentation helpers in [notebook_views.py](../../notebook_views.py) inspect the resulting objects and RDF; their Turtle excerpts are checked to contain only triples from the named source file.
 
-The narrative stops its illustrative run record after external preparation, with a synthetic observed quantity of 8 µL versus the planned 10 µL. Downstream work remains unobserved, and the run is incomplete. This demonstrates the distinction between a full prospective method and a partial observation record without fabricating completion of the experiment.
+The walkthrough follows receipt R-042 through the planned preparation and downstream protocol. Its generated SBOL, LabOP, methods, and robot programs describe the intended work and expected outputs.

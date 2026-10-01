@@ -1,6 +1,6 @@
-# Planning, compiling, and recording an experiment
+# Planning and compiling an experiment
 
-The pipeline is `SBOL designs + inventory + recipes + resolved methods → BuildPlan → ExperimentPlan → Compilation → explicit RunRecord`. Each arrow creates a new immutable snapshot. Target selection happens after the experiment has been frozen. SBOL, LabOP, methods, and robot programs are projections of those snapshots.
+The pipeline is `SBOL designs + inventory + recipes + resolved methods → BuildPlan → ExperimentPlan → ExperimentCompilation`. Each arrow creates a new immutable snapshot. Target selection happens after the experiment has been frozen. SBOL, LabOP, methods, and robot programs are projections of those snapshots.
 
 ## Python API
 
@@ -93,7 +93,7 @@ request = cloning.BuildRequest(
 
 `ExternalPreparationMethod` requires a procedure IRI and explicit instructions, plus exactly one source quantity (`source_volume_ul` or `source_count`) and one expected output quantity (`output_volume_ul` or `output_count`). Optional `reagents` name additional consumed liquids. The matching recipe specifies source and output forms; quantity kinds must agree with those forms. Instructions are preserved in SBOL, LabOP, methods, and the input snapshot. Supply complete instructions and a versioned procedure identifier; Lab does not fetch or invent the external procedure.
 
-External preparation becomes a `ProtocolStage(external=True)` containing an `ExternalPreparation` operation. Its input consumption and prospective output are checked at the operation boundary, so an output is not falsely declared present at the start of the stage. `compile(experiment, LiquidHandler.OT2)` emits an operator document for this stage and robot code for the automated stages. Explicit per-stage target mappings must assign external stages to `Manual()`. A completed operator procedure and measured output can be supplied through `Run`; compilation alone creates no recorded stock.
+External preparation becomes a `ProtocolStage(external=True)` containing an `ExternalPreparation` operation. Its input consumption and prospective output are checked at the operation boundary, so an output is not falsely declared present at the start of the stage. `compile(experiment, LiquidHandler.OT2)` emits an operator document for this stage and robot code for the automated stages. Explicit per-stage target mappings must assign external stages to `Manual()`. The preparation output remains a planned implementation with an expected quantity.
 
 The runnable [complete workflow](../examples/cloning_workflow.py) demonstrates counted input → external preparation → assembly → transformation → two plated samples using synthetic test data. Run `uv run python -m examples.cloning_workflow --target ot2` with the Opentrons extra, or choose `manual`, `flex`, or `star`.
 
@@ -117,7 +117,7 @@ Every operation has an identity. Supplying `Protocol(..., identity="https://.../
 
 ## LabOP and digital methods
 
-`lab.labop.export(experiment)` writes static protocol RDF. It never invokes LabOP's execution engine. The packaged UML ontology, LabOP ontology, and primitive libraries are pinned to upstream commit `2e2bd88150c71a440771fd369f40295dfd622324`; their hashes and license are included in `lab/labop/resources`.
+`lab.labop.export(experiment)` emits protocol RDF from the frozen experiment, including its stage protocols, operations, parameters, and material flows. This is the scope of the LabOP integration; execution recording is outside the compiler. The packaged UML ontology, LabOP ontology, and primitive libraries are pinned to upstream commit `2e2bd88150c71a440771fd369f40295dfd622324`; their hashes and license are included in `lab/labop/resources`.
 
 | Lab semantics | LabOP representation |
 | --- | --- |
@@ -135,35 +135,4 @@ The extension primitives are defined inside each artifact. Thermal profiles cont
 
 The bundle includes the Lab, LabOP, and UML schemas. The independent `scripts/check_labop.py` check loads them through SBOLFactory 1.1.2 and pySBOL3, validates the document, and verifies that thermal-profile parameters deserialize into typed objects. Run it in an isolated interpreter because SBOLFactory registers process-wide builders. This check does not execute the protocol.
 
-Bundles contain `experiment.json`, `build.json` where applicable, `provenance.ttl`, `protocol.labop.ttl`, `methods.md`, input snapshots, schemas, per-stage protocol/target plans, manifests, source maps, and generated programs. Inputs include the build-plan provenance before its protocol links were resolved, inventory, catalog mappings, recipes, and methods. `bundle.json` records SHA-256 checksums of the other artifacts. Methods describe planned work until observations exist.
-
-## Explicit run observations
-
-```python
-from lab.execution import Outcome, Run, RunMode, StepRecord
-
-run = Run(
-    compilation,
-    identity="https://example.org/runs/42",
-    mode=RunMode.PHYSICAL,
-    agent=operator,
-    started_at=observed_start,
-)
-run.record(
-    StepRecord(
-        step=step_identity,
-        attempt=1,
-        outcome=Outcome.SUCCEEDED,
-        started_at=step_start,
-        ended_at=step_end,
-        observations=(),
-        evidence=(),
-    )
-)
-record = run.finalize(ended_at=observed_end)
-record.write("runs/42")
-```
-
-Times, outcomes, attempts, measurements, and evidence come from the caller. Missing observations remain missing; skipped steps do not produce action firings. `record.complete` requires ordered successful coverage of every semantic step, using the latest recorded attempt. A successful step history does not automatically realize a product: `OutputRecord` explicitly records observed material under a new identity, with an optional measured volume or count and a structural assertion. The observed quantity kind must match the planned material form; planned counts and yields are never substituted for observations. Simulation produces simulated activities and implementations.
-
-Observed SBOL and LabOP share activity identities and timestamps. LabOP stage observation windows aggregate supplied records; no structural UML token firings or unobserved subprotocol calls are fabricated. The execution bundle refers to the immutable compilation digest. Live robot event capture and automatic inventory updates are deferred.
+Bundles contain `experiment.json`, `build.json` where applicable, `provenance.ttl`, `protocol.labop.ttl`, `methods.md`, input snapshots, schemas, per-stage protocol/target plans, manifests, source maps, and generated programs. Inputs include the build-plan provenance before its protocol links were resolved, inventory, catalog mappings, recipes, and methods. `bundle.json` records SHA-256 checksums of the other artifacts. Methods describe the planned procedure and its expected outputs.
