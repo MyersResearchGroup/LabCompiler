@@ -1,0 +1,136 @@
+@prefix edam: <https://identifiers.org/edam:> .
+@prefix ex: <https://example.org/reporter/> .
+@prefix lab: <https://the-lab-compiler.github.io/lab-py/ns#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix sbo: <https://identifiers.org/SBO:> .
+@prefix sbol: <http://sbols.org/v3#> .
+@prefix so: <https://identifiers.org/SO:> .
+
+<https://example.org/reporter/broth/material> a sbol:Implementation ;
+    sbol:description "Illustrative reagent stock." ;
+    sbol:displayId "material" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "broth/material" ;
+    prov:wasDerivedFrom ex:broth ;
+    lab:evidenceState lab:recorded .
+
+<https://example.org/reporter/buffer/implementation> a sbol:Implementation ;
+    sbol:description "Illustrative reagent stock." ;
+    sbol:displayId "implementation" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "buffer/implementation" ;
+    prov:wasDerivedFrom ex:buffer ;
+    lab:evidenceState lab:recorded .
+
+<https://example.org/reporter/cells/material> a sbol:Implementation ;
+    sbol:description "Illustrative aliquot in cell box H1, position A1." ;
+    sbol:displayId "material" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Host aliquot H1-03" ;
+    prov:wasDerivedFrom ex:cells ;
+    lab:evidenceState lab:recorded .
+
+<https://example.org/reporter/insert/implementation> a sbol:Implementation ;
+    sbol:description "Illustrative aliquot in DNA rack D1, position C2." ;
+    sbol:displayId "implementation" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Insert aliquot I-07" ;
+    prov:wasDerivedFrom ex:insert ;
+    lab:evidenceState lab:recorded .
+
+ex:received_stab a sbol:Implementation ;
+    sbol:description "Illustrative received vector stab; logged in receipt box B3." ;
+    sbol:displayId "received_stab" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Receipt R-042 / lot V-17" ;
+    prov:wasDerivedFrom ex:vector ;
+    lab:evidenceState lab:recorded .
+
+ex:strain a sbol:Component ;
+    sbol:description "Intended reporter reference material; no fluorescence or sequence verification is asserted." ;
+    sbol:displayId "strain" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "H1 / pReference-Green" ;
+    sbol:type <https://example.org/cell> .
+
+ex:substrate a sbol:Component ;
+    sbol:description "Supplied consumable; automatic consumable reservation is outside this example." ;
+    sbol:displayId "substrate" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Deposition substrate" ;
+    sbol:type sbo:0000247 .
+
+ex:target a sbol:Component ;
+    sbol:description "Intended reporter reference construct for the illustrative study." ;
+    sbol:displayId "target" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "pReference-Green" ;
+    sbol:type sbo:0000251,
+        so:0000988 .
+
+<https://example.org/reporter/water/implementation> a sbol:Implementation ;
+    sbol:description "Illustrative reagent stock." ;
+    sbol:displayId "implementation" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "water/implementation" ;
+    prov:wasDerivedFrom ex:water ;
+    lab:evidenceState lab:recorded .
+
+ex:broth a sbol:Component ;
+    sbol:description "Supplied reagent in the illustrative inventory." ;
+    sbol:displayId "broth" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Recovery and dilution medium" ;
+    sbol:type sbo:0000247 .
+
+ex:buffer a sbol:Component ;
+    sbol:description "Supplied reagent in the illustrative inventory." ;
+    sbol:displayId "buffer" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Assembly buffer" ;
+    sbol:type sbo:0000247 .
+
+ex:cells a sbol:Component ;
+    sbol:description "A named recipient stock in the illustrative laboratory record." ;
+    sbol:displayId "cells" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Host H1" ;
+    sbol:type <https://example.org/cell> .
+
+ex:insert a sbol:Component ;
+    sbol:description "Illustrative cassette design; the sequence is a compiler surrogate, not a reporter coding sequence." ;
+    sbol:displayId "insert" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:hasSequence ex:insert_sequence ;
+    sbol:name "Green reporter cassette" ;
+    sbol:type sbo:0000251,
+        so:0000987 .
+
+ex:insert_sequence a sbol:Sequence ;
+    sbol:displayId "insert_sequence" ;
+    sbol:elements "GGGAATTCCCCGAATTCGG" ;
+    sbol:encoding edam:format_1207 ;
+    sbol:hasNamespace <https://example.org/reporter> .
+
+ex:vector a sbol:Component ;
+    sbol:description "Illustrative reporter-study design; its short sequence is a compiler surrogate, not a usable plasmid." ;
+    sbol:displayId "vector" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:hasSequence ex:vector_sequence ;
+    sbol:name "pReference backbone" ;
+    sbol:type sbo:0000251,
+        so:0000988 .
+
+ex:vector_sequence a sbol:Sequence ;
+    sbol:displayId "vector_sequence" ;
+    sbol:elements "AAAAGAATTCTTTT" ;
+    sbol:encoding edam:format_1207 ;
+    sbol:hasNamespace <https://example.org/reporter> .
+
+ex:water a sbol:Component ;
+    sbol:description "Supplied reagent in the illustrative inventory." ;
+    sbol:displayId "water" ;
+    sbol:hasNamespace <https://example.org/reporter> ;
+    sbol:name "Diluent" ;
+    sbol:type sbo:0000247 .
+

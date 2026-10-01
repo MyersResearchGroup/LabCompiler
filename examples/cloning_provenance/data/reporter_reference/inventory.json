@@ -1,0 +1,109 @@
+{
+  "format": "lab.inventory.v1",
+  "inventory": {
+    "identity": "https://example.org/reporter/integrated_inventory",
+    "stocks": [
+      {
+        "concentration_ng_ul": null,
+        "design": {
+          "identity": "https://example.org/reporter/broth"
+        },
+        "form": "reagent",
+        "identity": "https://example.org/reporter/broth/stock",
+        "implementation": {
+          "identity": "https://example.org/reporter/broth/material"
+        },
+        "location": {
+          "container": "Reagent rack",
+          "position": "broth"
+        },
+        "quantity_ul": "20",
+        "supplier_item": null
+      },
+      {
+        "concentration_ng_ul": null,
+        "design": {
+          "identity": "https://example.org/reporter/buffer"
+        },
+        "form": "reagent",
+        "identity": "https://example.org/reporter/buffer/stock",
+        "implementation": {
+          "identity": "https://example.org/reporter/buffer/implementation"
+        },
+        "location": {
+          "container": "Reagent rack",
+          "position": "buffer"
+        },
+        "quantity_ul": "10",
+        "supplier_item": null
+      },
+      {
+        "concentration_ng_ul": null,
+        "design": {
+          "identity": "https://example.org/reporter/cells"
+        },
+        "form": "competent_cells",
+        "identity": "https://example.org/reporter/cells/stock",
+        "implementation": {
+          "identity": "https://example.org/reporter/cells/material"
+        },
+        "location": {
+          "container": "Cell box H1",
+          "position": "A1"
+        },
+        "quantity_ul": "20",
+        "supplier_item": null
+      },
+      {
+        "concentration_ng_ul": null,
+        "design": {
+          "identity": "https://example.org/reporter/insert"
+        },
+        "form": "dna",
+        "identity": "https://example.org/reporter/insert/stock",
+        "implementation": {
+          "identity": "https://example.org/reporter/insert/implementation"
+        },
+        "location": {
+          "container": "DNA rack D1",
+          "position": "C2"
+        },
+        "quantity_ul": "10",
+        "supplier_item": null
+      },
+      {
+        "count": 1,
+        "design": {
+          "identity": "https://example.org/reporter/vector"
+        },
+        "form": "bacterial_stab",
+        "identity": "https://example.org/reporter/stab_stock",
+        "implementation": {
+          "identity": "https://example.org/reporter/received_stab"
+        },
+        "location": {
+          "container": "Receipt box",
+          "position": "B3"
+        },
+        "supplier_item": null
+      },
+      {
+        "concentration_ng_ul": null,
+        "design": {
+          "identity": "https://example.org/reporter/water"
+        },
+        "form": "reagent",
+        "identity": "https://example.org/reporter/water/stock",
+        "implementation": {
+          "identity": "https://example.org/reporter/water/implementation"
+        },
+        "location": {
+          "container": "Reagent rack",
+          "position": "water"
+        },
+        "quantity_ul": "10",
+        "supplier_item": null
+      }
+    ]
+  }
+}

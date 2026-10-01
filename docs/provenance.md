@@ -118,6 +118,6 @@ The small Lab extension vocabulary is packaged at `lab/provenance/resources/lab.
 uv run --no-sync python -m examples.provenance --out build/provenance.ttl
 ```
 
-[The example](../examples/provenance.py) builds a design, an inventory assertion, a prospective activity, and a planned output; checks the SBOL3 export; writes it; and verifies its round trip. It specifies no executable cloning method.
+[The example](../examples/provenance.py) builds a design, an inventory assertion, a prospective activity, and a planned output; checks the SBOL3 export; writes it; and verifies its round trip. It specifies no executable cloning method. The [experiment walkthrough](cloning-provenance.md) covers inventory planning, compiler integration, and LabOP protocol export; the [implementation status](provenance-implementation.md) lists the remaining integrations.
 
-The mappings follow the [SBOL 3.1 specification](https://sbolstandard.org/docs/SBOL3.1.0.pdf) and [pySBOL3's provenance model](https://raw.githubusercontent.com/SynBioDex/pySBOL3/main/sbol3/provenance.py).
+The mappings follow the [SBOL 3.1 specification](https://sbolstandard.org/docs/SBOL3.1.0.pdf) and [pySBOL3's provenance model](https://raw.githubusercontent.com/SynBioDex/pySBOL3/main/sbol3/provenance.py). Protocol interchange uses [LabOP](https://bioprotocols.github.io/labop/).
