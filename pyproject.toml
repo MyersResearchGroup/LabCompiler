@@ -26,10 +26,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/the-lab-compiler/lab-py"
-Documentation = "https://github.com/the-lab-compiler/lab-py#readme"
-Repository = "https://github.com/the-lab-compiler/lab-py"
-Issues = "https://github.com/the-lab-compiler/lab-py/issues"
+Homepage = "https://github.com/MyersResearchGroup/LabCompiler"
+Documentation = "https://github.com/MyersResearchGroup/LabCompiler#readme"
+Repository = "https://github.com/MyersResearchGroup/LabCompiler"
+Issues = "https://github.com/MyersResearchGroup/LabCompiler/issues"
 
 [project.optional-dependencies]
 opentrons = ["opentrons==8.8.2"]
@@ -59,6 +59,7 @@ include = [
     "/integrations",
     "/docs",
     "/README.md",
+    "/CHANGELOG.md",
     "/LICENSE",
     "/pyproject.toml",
     "/uv.lock",

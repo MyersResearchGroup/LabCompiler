@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/the-lab-compiler/lab-py/master/docs/assets/brand/wordmark-full-dark.svg">
-    <img alt="The Lab Compiler" src="https://raw.githubusercontent.com/the-lab-compiler/lab-py/master/docs/assets/brand/wordmark-full-light.svg" width="620">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/MyersResearchGroup/LabCompiler/master/docs/assets/brand/wordmark-full-dark.svg">
+    <img alt="The Lab Compiler" src="https://raw.githubusercontent.com/MyersResearchGroup/LabCompiler/master/docs/assets/brand/wordmark-full-light.svg" width="620">
   </picture>
 </p>
 
@@ -59,7 +59,7 @@ compiled = compile(
 
 ## Describe a deck
 
-This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/deck_layouts.py).
+This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/MyersResearchGroup/LabCompiler/blob/master/examples/deck_layouts.py).
 
 ```python
 from lab.deck import Deck, DeckLayout, Pipette, Placement, Slot, TipRack
@@ -119,7 +119,7 @@ Use `DeckLayout` when equipment or placement needs to be explicit. Each layout n
 
 Equipment models are typed identifiers from `lab.equipment`; each backend resolves the models it supports. A STAR layout can place a carrier at `Rail(20)` and a plate at `HolderSite("plates", 3)`. An Opentrons layout can place the same logical container at `Slot("2")` or on a named module. The shared model does not impose one thermal device on every handler. Targets enforce their supported device counts, models, locations, and module footprints.
 
-The [deck layouts example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/deck_layouts.py) prepares duplicate BSA standards and purified protein samples in a flat-bottom assay plate using a reservoir of prepared BCA working reagent. `protocol()` describes the transfers; `deck()` shares the container requirements and calls `opentrons_layout()` for OT-2 and Flex and `hamilton_layout()` for STAR. The logical source wells map to physical wells `B1`–`B12` on each handler; STAR also specifies carriers, rails, and occupied carrier sites. Mixing, incubation, and absorbance reading remain an explicit operator handoff following the [Pierce BCA guide](https://www.thermofisher.com/TFS-Assets/LSG/manuals/MAN0011430_Pierce_BCA_Protein_Asy_UG.pdf). The example imports only Lab types and the Python standard library, with layouts to adapt to installed equipment.
+The [deck layouts example](https://github.com/MyersResearchGroup/LabCompiler/blob/master/examples/deck_layouts.py) prepares duplicate BSA standards and purified protein samples in a flat-bottom assay plate using a reservoir of prepared BCA working reagent. `protocol()` describes the transfers; `deck()` shares the container requirements and calls `opentrons_layout()` for OT-2 and Flex and `hamilton_layout()` for STAR. The logical source wells map to physical wells `B1`–`B12` on each handler; STAR also specifies carriers, rails, and occupied carrier sites. Mixing, incubation, and absorbance reading remain an explicit operator handoff following the [Pierce BCA guide](https://www.thermofisher.com/TFS-Assets/LSG/manuals/MAN0011430_Pierce_BCA_Protein_Asy_UG.pdf). The example imports only Lab types and the Python standard library, with layouts to adapt to installed equipment.
 
 ```python
 from examples.deck_layouts import deck, protocol
@@ -138,8 +138,8 @@ For Opentrons, place thermal labware on a supported `Module`. STAR layouts curre
 The examples live in the source repository. With [uv](https://docs.astral.sh/uv/) installed, set up Python 3.12 and both optional SDKs:
 
 ```sh
-git clone https://github.com/the-lab-compiler/lab-py.git
-cd lab-py
+git clone https://github.com/MyersResearchGroup/LabCompiler.git
+cd LabCompiler
 uv sync --locked --all-extras --python 3.12
 uv run --no-sync python -m examples.cloning --target manual
 uv run --no-sync python -m examples.cloning --target ot2
@@ -176,4 +176,4 @@ uv run --no-sync mypy
 uv run --no-sync pytest
 ```
 
-See the [release guide](https://github.com/the-lab-compiler/lab-py/blob/master/docs/releasing.md) for package validation and PyPI publishing.
+See the [release guide](https://github.com/MyersResearchGroup/LabCompiler/blob/master/docs/releasing.md) for package validation and PyPI publishing, and the [release notes](https://github.com/MyersResearchGroup/LabCompiler/blob/master/CHANGELOG.md) for changes and migration guidance.
