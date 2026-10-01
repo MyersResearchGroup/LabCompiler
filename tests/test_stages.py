@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+import sbol3
 
 import lab
 from examples.cloning import ASSEMBLIES as CLONING_ASSEMBLIES
@@ -10,12 +11,11 @@ from examples.cloning import STRAINS as CLONING_STRAINS
 from lab.experiments.cloning import (
     BSAI,
     Assembly,
-    AssemblyRequest,
-    PlatingRequest,
     Transformation,
-    TransformationRequest,
     assembly_deck,
     build_assembly,
+    build_plating,
+    build_transformation,
     golden_gate,
     layout_assembly,
     layout_transformation,
@@ -25,7 +25,6 @@ from lab.experiments.cloning import (
 )
 from lab.experiments.cloning.addresses import well_name
 from lab.model import Mix, Transfer
-from lab.part import Part
 from lab.samples import Location
 from lab.targets import Labware, LiquidHandler, Manual
 from lab.targets.lower import lower_deck
@@ -89,7 +88,7 @@ def test_plating_stays_on_one_plate_until_a_half_is_full():
 
 def test_compiled_requests_link_stages_through_the_snapshot():
     assembled = lab.compile(
-        AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES),
+        build_assembly(CLONING_ASSEMBLIES, name="sbol-loop-assembly"),
         Manual(),
     )
     outputs = assembled.manifest
@@ -97,22 +96,16 @@ def test_compiled_requests_link_stages_through_the_snapshot():
     assert [
         locations[sample.id]
         for sample in outputs.samples
-        if sample.material_identity == "https://SBOL2Build.org/composite_plasmid_1/1"
+        if sample.material_identity == CLONING_ASSEMBLIES[0].product.identity
     ] == [Location("products", "A1")]
     assert any(isinstance(step, Transfer) for step in assembled.protocol.steps)
     transformed = lab.compile(
-        TransformationRequest(id="heat-shock", transformations=CLONING_STRAINS),
+        build_transformation(CLONING_STRAINS, inputs=assembled.manifest, name="heat-shock"),
         Manual(),
-        inputs=assembled.manifest,
     )
     plated = lab.compile(
-        PlatingRequest(
-            id="plating",
-            sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
-            source_stage_id=transformed.manifest.protocol_id,
-        ),
+        build_plating(transformed.manifest),
         Manual(),
-        inputs=transformed.manifest,
     )
     assert plated.manifest.samples
     assert {type(step) for step in plated.protocol.steps} >= {Transfer, Mix}
@@ -130,85 +123,72 @@ def test_compiled_requests_link_stages_through_the_snapshot():
 
 def test_transformation_uses_caller_defined_materials():
     transformation = Transformation(
-        id="custom-transformation",
-        strain=Part("https://example.org/custom-strain/1"),
-        chassis=Part("https://example.org/custom-cells/1"),
-        plasmids=[Part("https://example.org/custom-plasmid/1")],
+        strain=sbol3.Component("https://example.org/custom_strain", sbol3.SBO_DNA),
+        chassis=sbol3.Component("https://example.org/custom_cells", sbol3.SBO_DNA),
+        plasmids=[sbol3.Component("https://example.org/custom_plasmid", sbol3.SBO_DNA)],
     )
-    compiled = lab.compile(transformation, Manual())
-    assert compiled.protocol.name == transformation.id
-    assert compiled.manifest.protocol_id == transformation.id
-    assert {sample.material_identity for sample in compiled.manifest.samples} == {"custom-strain"}
+    compiled = lab.compile(
+        build_transformation((transformation,), name="custom-transformation"), Manual()
+    )
+    assert compiled.protocol.name == "custom-transformation"
+    assert compiled.manifest.protocol_id == "custom-transformation"
+    assert {sample.material_identity for sample in compiled.manifest.samples} == {
+        transformation.strain.identity
+    }
     assert {
         sample.material_identity for sample in compiled.protocol.samples if sample.role == "dna"
-    } == {"custom-plasmid"}
+    } == {transformation.plasmids[0].identity}
     assert all(
-        sample.contents[:3] == ("custom-strain", "Competent_Cell_custom-cells", "custom-plasmid")
+        sample.contents[:3] == ("custom_strain", "Competent_Cell_custom_cells", "custom_plasmid")
         for sample in compiled.manifest.samples
     )
 
 
 def test_assembly_accepts_unversioned_part_iris():
-    product = Part("https://example.org/design/product")
-    insert = Part("https://example.org/parts/reporter")
+    product = sbol3.Component("https://example.org/design/product", sbol3.SBO_DNA)
+    insert = sbol3.Component("https://example.org/parts/reporter", sbol3.SBO_DNA)
     assembly = Assembly(
-        id="example-assembly",
         product=product,
-        backbone=Part("https://example.org/parts/backbone"),
+        backbone=sbol3.Component("https://example.org/parts/backbone", sbol3.SBO_DNA),
         parts=[insert],
         restriction_enzyme=BSAI,
     )
     assert assembly.parts == (insert,)
-    compiled = lab.compile(assembly, Manual())
-    assert compiled.protocol.name == assembly.id
+    compiled = lab.compile(build_assembly((assembly,), name="example-assembly"), Manual())
+    assert compiled.protocol.name == "example-assembly"
     outputs = compiled.manifest
     locations = {placement.sample_id: placement.location for placement in outputs.placements}
     assert [
         locations[sample.id]
         for sample in outputs.samples
-        if sample.material_identity == product.iri
+        if sample.material_identity == product.identity
     ] == [Location("products", "A1")]
     assert any(sample.label == "Restriction Enzyme BsaI" for sample in compiled.protocol.samples)
 
 
-def test_one_assembly_matches_its_request_and_rejects_inputs():
-    assembly = CLONING_ASSEMBLIES[0]
-    direct = lab.compile(assembly, Manual())
-    built = lab.compile(
-        build_assembly(AssemblyRequest(id=assembly.id, assemblies=(assembly,))),
-        Manual(),
-    )
-    assert direct.protocol.name == assembly.id
-    assert direct.digest == built.digest
-    with pytest.raises(TypeError, match="transformation or plating"):
-        lab.compile(assembly, Manual(), inputs=direct.manifest)
-    with pytest.raises(TypeError, match="transformation or plating"):
-        lab.compile(direct.protocol, Manual(), inputs=direct.manifest)
+def test_compiler_accepts_protocols_and_keeps_the_snapshot_internal():
+    protocol = build_assembly(CLONING_ASSEMBLIES)
+    compiled = lab.compile(protocol, Manual())
+    assert compiled.protocol == protocol.snapshot()
+    for value in (CLONING_ASSEMBLIES[0], compiled.protocol):
+        with pytest.raises(TypeError, match="Compile a Protocol"):
+            lab.compile(value, Manual())
+    with pytest.raises(TypeError, match="inputs"):
+        lab.compile(protocol, Manual(), inputs=compiled.manifest)
 
 
-def test_part_iri_and_part_sequence_are_checked():
-    assert Part("https://sbolcanvas.org/GFP/1").iri == "https://sbolcanvas.org/GFP/1"
-    with pytest.raises(ValueError, match="Part IRI"):
-        Part("GFP")
-    with pytest.raises(ValueError, match="Part IRI"):
-        Part("ATGCTAA")
-    plasmid = Part("https://SBOL2Build.org/composite_plasmid_1/1")
+def test_cloning_recipes_require_native_sbol_components():
+    plasmid = sbol3.Component("https://example.org/plasmid", sbol3.SBO_DNA)
     with pytest.raises(TypeError, match="Parts"):
         Assembly(
-            id="assembly",
-            product=plasmid,
-            backbone=plasmid,
-            parts="https://sbolcanvas.org/GFP/1",
-            restriction_enzyme=BSAI,
+            product=plasmid, backbone=plasmid, parts=[plasmid.identity], restriction_enzyme=BSAI
         )
-    strain = Part("https://example.org/custom-strain/1")
+    with pytest.raises(TypeError, match="Strain"):
+        Transformation(strain=plasmid.identity, chassis=plasmid, plasmids=[plasmid])
     with pytest.raises(TypeError, match="Plasmids"):
-        Transformation(
-            id="transformation",
-            strain=strain,
-            chassis=strain,
-            plasmids="https://example.org/custom-plasmid/1",
-        )
+        Transformation(strain=plasmid, chassis=plasmid, plasmids="https://example.org/plasmid")
+    with pytest.raises(ValueError, match="nonempty"):
+        Transformation(strain=plasmid, chassis=plasmid, plasmids=[])
 
 
 @pytest.mark.parametrize("designs", [{}, {"assemblies": ASSEMBLIES}, {"strains": STRAINS}])
@@ -218,7 +198,7 @@ def test_chained_plan_requires_both_design_inputs(designs):
 
 
 def test_compiling_a_deck_requires_a_liquid_handler():
-    protocol = golden_gate(ASSEMBLIES, STRAINS)
+    protocol = golden_gate(CLONING_ASSEMBLIES, CLONING_STRAINS)
     with pytest.raises(TypeError, match="deck="):
         lab.compile(protocol, assembly_deck())
     with pytest.raises(TypeError, match="liquid_handler"):
@@ -292,14 +272,14 @@ def test_ot2_lowering_uses_the_cloning_slots():
 def test_compiler_rejects_unsupported_star_preset_equipment():
     with pytest.raises(lab.CompileError, match="No STAR preset.*Lab DeckLayout"):
         lab.compile(
-            AssemblyRequest(id="sbol-loop-assembly", assemblies=CLONING_ASSEMBLIES),
+            build_assembly(CLONING_ASSEMBLIES, name="sbol-loop-assembly"),
             deck=assembly_deck(),
             liquid_handler=LiquidHandler.STAR,
         )
 
 
 def test_chained_plan_compiles_and_conserves_volume():
-    bundle = lab.compile(golden_gate(ASSEMBLIES, STRAINS), Manual())
+    bundle = lab.compile(golden_gate(CLONING_ASSEMBLIES, CLONING_STRAINS), Manual())
     initial = sum(fill.volume for resource in bundle.protocol.resources for fill in resource.fills)
     assert sum(volume for _location, volume in bundle.final_volumes) == initial
     transferred = [

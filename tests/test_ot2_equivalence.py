@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+import sbol3
 
 import lab
 from examples.transformation import (
@@ -23,14 +24,19 @@ from examples.transformation import (
     TRANSFORMATIONS,
 )
 from lab.experiments.cloning import (
-    TransformationRequest,
+    Assembly,
+    Transformation,
     assembly_deck,
     build_assembly,
     build_plating,
     build_transformation,
+    layout_assembly,
     plating_deck,
+    record_assembly,
     transformation_deck,
 )
+from lab.experiments.cloning.addresses import well_at
+from lab.samples import Location, OutputManifest, Sample, SamplePlacement
 from lab.targets import LiquidHandler
 from lab.units import magnitude
 
@@ -159,7 +165,18 @@ def test_sbol_assembly_matches_pudu_transfers_profiles_and_wells(tmp_path):
             "Restriction Enzyme": "https://SBOL2Build.org/BsaI/1",
         }
     ]
-    protocol = build_assembly(assemblies, name="SBOL loop assembly")
+    entry = assemblies[0]
+    recipe = Assembly(
+        product=sbol3.Component(entry["Product"].removesuffix("/1"), sbol3.SBO_DNA),
+        backbone=sbol3.Component(entry["Backbone"].removesuffix("/1"), sbol3.SBO_DNA),
+        parts=[
+            sbol3.Component(uri.removesuffix("/1"), sbol3.SBO_DNA) for uri in entry["PartsList"]
+        ],
+        restriction_enzyme=sbol3.Component(
+            entry["Restriction Enzyme"].removesuffix("/1"), sbol3.SBO_PROTEIN
+        ),
+    )
+    protocol = build_assembly((recipe,), name="SBOL loop assembly")
     ours = _log(_lab_source(protocol, assembly_deck()), tmp_path)
     source = _protocol(
         "assemblies = "
@@ -175,7 +192,9 @@ def run(protocol: protocol_api.ProtocolContext):
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
     assert _profiles(ours) == _profiles(pudu)
-    _assert_product_locations(protocol, _handoff(pudu))
+    _assert_product_locations(
+        protocol, {uri.removesuffix("/1"): wells for uri, wells in _handoff(pudu).items()}
+    )
 
 
 @pytest.mark.integration
@@ -202,7 +221,13 @@ def run(protocol: protocol_api.ProtocolContext):
     ],
 )
 def test_other_assembly_formats_match_pudu(tmp_path, assemblies, factory):
-    protocol = build_assembly(assemblies, name=factory)
+    layout = layout_assembly(assemblies)
+    protocol = lab.Protocol(factory)
+    reagents = protocol.plate("reagents", shape=(4, 6), capacity=1500 * lab.uL)
+    products = protocol.plate("products", capacity=100 * lab.uL)
+    for index, material, volume in layout.stocks:
+        protocol.load(well_at(reagents, index), material, volume=volume * lab.uL)
+    outputs = record_assembly(protocol, layout, reagents, products)
     ours = _log(_lab_source(protocol, assembly_deck()), tmp_path)
     source = _protocol(
         "assemblies = "
@@ -218,7 +243,7 @@ def run(protocol: protocol_api.ProtocolContext):
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
     assert _profiles(ours) == _profiles(pudu)
-    _assert_product_locations(protocol, _handoff(pudu))
+    assert {key: [well.name for well in wells] for key, wells in outputs.items()} == _handoff(pudu)
 
 
 @pytest.mark.integration
@@ -232,7 +257,17 @@ def test_heat_shock_matches_pudu_transfers_and_well_labels(tmp_path):
         }
     ]
     locations = {"https://SBOL2Build.org/composite_plasmid_1/1": ["A1"]}
-    protocol = build_transformation(strains, locations, name="Heat-shock transformation")
+    entry = strains[0]
+    recipe = Transformation(
+        strain=sbol3.Component(entry["Strain"].removesuffix("/1"), sbol3.SBO_FUNCTIONAL_ENTITY),
+        chassis=sbol3.Component(entry["Chassis"].removesuffix("/1"), sbol3.SBO_FUNCTIONAL_ENTITY),
+        plasmids=[
+            sbol3.Component(uri.removesuffix("/1"), sbol3.SBO_DNA) for uri in entry["Plasmids"]
+        ],
+    )
+    protocol = build_transformation(
+        (recipe,), {uri.removesuffix("/1"): wells for uri, wells in locations.items()}
+    )
     ours = _log(_lab_source(protocol, transformation_deck()), tmp_path)
     source = _protocol(
         "strains = "
@@ -262,14 +297,20 @@ def run(protocol: protocol_api.ProtocolContext):
 @requires_robots
 def test_triplicate_transformation_matches_pudu_transfers_and_well_labels(tmp_path):
     """Two DNAs, three replicates, 20 µL of cells from one 1 mL aliquot."""
+    # PUDU names materials from SBOL2 versioned identities.
     strains = [
-        {"Strain": STRAIN_1.iri, "Chassis": DH5ALPHA.iri, "Plasmids": [DNA_1.iri]},
-        {"Strain": STRAIN_2.iri, "Chassis": DH5ALPHA.iri, "Plasmids": [DNA_2.iri]},
+        {
+            "Strain": strain.identity + "/1",
+            "Chassis": DH5ALPHA.identity + "/1",
+            "Plasmids": [dna.identity + "/1"],
+        }
+        for strain, dna in ((STRAIN_1, DNA_1), (STRAIN_2, DNA_2))
     ]
     # Recovery media is grouped by the 300 µL tip rack this OT-2 protocol loads.
     tiprack = "opentrons_96_tiprack_300ul"
     protocol = build_transformation(
-        TransformationRequest(id="transformation", transformations=TRANSFORMATIONS),
+        TRANSFORMATIONS,
+        name="transformation",
         replicates=REPLICATES,
         transfer_volume_competent_cell=CELLS_PER_REACTION,
         tube_volume_competent_cell=CELL_ALIQUOT,
@@ -305,7 +346,22 @@ def run(protocol: protocol_api.ProtocolContext):
 @requires_robots
 def test_plating_matches_pudu_transfers(tmp_path):
     bacteria = {"A1": ["composite_strain_1", "Competent_Cell_DH5alpha"], "B1": "composite_strain_1"}
-    protocol = build_plating(bacteria, name="Plating", replicates=1, number_dilutions=2)
+    inputs = OutputManifest(
+        protocol_id="source",
+        samples=tuple(
+            Sample(
+                id=well,
+                material_identity=well,
+                label=well,
+                contents=tuple(value) if isinstance(value, list) else (value,),
+            )
+            for well, value in bacteria.items()
+        ),
+        placements=tuple(
+            SamplePlacement(sample_id=well, location=Location("source", well)) for well in bacteria
+        ),
+    )
+    protocol = build_plating(inputs, name="Plating", replicates=1, number_dilutions=2)
     ours = _log(_lab_source(protocol, plating_deck()), tmp_path)
     source = _protocol(
         "bacteria = "

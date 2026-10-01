@@ -14,8 +14,10 @@ from decimal import Decimal
 from fnmatch import fnmatch
 from itertools import product
 
+from sbol3 import Component
+
 from lab.experiments.cloning.addresses import microliters, uri_name, well_at
-from lab.experiments.cloning.types import AssemblyRequest
+from lab.experiments.cloning.types import Assembly
 from lab.protocol import Plate, Protocol, Well
 from lab.samples import Sample
 from lab.units import celsius, minutes, uL
@@ -140,41 +142,47 @@ def record_assembly(
 
 
 def build_assembly(
-    assemblies: AssemblyRequest | Sequence[Mapping[str, object]],
+    assemblies: Sequence[Assembly],
     *,
     name: str = "Loop assembly",
     **params: object,
 ) -> Protocol:
     """A standalone assembly protocol whose plates are named ``reagents`` and ``products``."""
-    if isinstance(assemblies, AssemblyRequest):
-        name = assemblies.id
-        assemblies = [
-            {
-                "Product": assembly.product.iri,
-                "Backbone": assembly.backbone.iri,
-                "PartsList": [part.iri for part in assembly.parts],
-                "Restriction Enzyme": assembly.restriction_enzyme.iri,
-            }
-            for assembly in assemblies.assemblies
-        ]
-    layout = layout_assembly(assemblies, **params)  # type: ignore[arg-type]
+    designs: dict[str, Component] = {}
+    for assembly in assemblies:
+        designs[assembly.product.identity] = assembly.product
+        enzyme = assembly.restriction_enzyme
+        designs[f"Restriction Enzyme {uri_name(enzyme.identity)}"] = enzyme
+        for part in (assembly.backbone, *assembly.parts):
+            label = uri_name(part.identity)
+            if label in designs and designs[label].identity != part.identity:
+                raise ValueError(f"Two part IRIs extract to the same name {label!r}.")
+            designs[label] = part
+    layout = layout_assembly([assembly._inputs() for assembly in assemblies], **params)  # type: ignore[arg-type]
     protocol = Protocol(name, description="Golden Gate assembly on a thermocycler plate.")
     reagents = protocol.plate("reagents", shape=(4, 6), capacity=1500 * uL, dead_volume=0 * uL)
     products = protocol.plate("products", shape=(8, 12), capacity=100 * uL, dead_volume=0 * uL)
     stock_ids: dict[str, str] = {}
     for index, material, volume in layout.stocks:
         protocol.load(well_at(reagents, index), material, volume=volume * uL)
+        design = designs.get(material)
         sample = Sample(
-            id=f"stock-{index}", material_identity=material, label=material, role="stock"
+            id=f"stock-{index}",
+            material_identity=design.identity if design is not None else material,
+            label=(design.name if design is not None else None) or material,
+            role="stock",
+            design=design.identity if design is not None else None,
         )
         protocol.add_sample(sample, at=well_at(reagents, index), is_input=True)
         stock_ids[material] = sample.id
     for reaction in layout.reactions:
+        design = designs[reaction.product_key]
         protocol.add_sample(
             Sample(
                 id=f"product-{reaction.destination}",
                 material_identity=reaction.product_key,
-                label=uri_name(reaction.product_key),
+                design=design.identity,
+                label=design.name or uri_name(reaction.product_key),
                 parent_ids=tuple(
                     dict.fromkeys(stock_ids[material] for material, _, _ in reaction.additions)
                 ),

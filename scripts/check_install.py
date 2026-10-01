@@ -8,6 +8,8 @@ from importlib.resources import files
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import sbol3
+
 import lab
 from lab.targets import Manual
 
@@ -15,7 +17,6 @@ from lab.targets import Manual
 def main() -> None:
     # Verify public modules and subpackages are present in the installed distribution.
     import_module("lab.experiments.cloning")
-    import_module("lab.part")
     import_module("lab.samples")
 
     package = distribution("lab-compiler")
@@ -27,13 +28,17 @@ def main() -> None:
     assert lab.__file__ is not None
     assert not Path(lab.__file__).resolve().is_relative_to(Path(__file__).resolve().parents[1])
 
+    designs = sbol3.Document()
+    designs.add(sbol3.Component("https://example.org/install_check/design", sbol3.SBO_DNA))
+    assert not designs.validate().errors
+
     protocol = lab.Protocol("Installed package check")
     source = protocol.container(
         "source", contents="water", volume=100 * lab.uL, capacity=200 * lab.uL
     )
     destination = protocol.container("destination", capacity=200 * lab.uL)
     protocol.transfer(source, destination, volume=10 * lab.uL)
-    compilation = lab.compile(protocol, Manual())
+    compilation = lab.compile(protocol, Manual(), to=None)
     with TemporaryDirectory() as directory:
         output = compilation.write(directory)
         plan = json.loads((output / "plan.json").read_text())

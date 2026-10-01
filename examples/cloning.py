@@ -3,47 +3,68 @@
 import argparse
 from pathlib import Path
 
+import sbol3
+
 from lab import compile
 from lab.experiments.cloning import (
     BSAI,
     Assembly,
-    AssemblyRequest,
-    PlatingRequest,
     Transformation,
-    TransformationRequest,
     assembly_deck,
+    build_assembly,
+    build_plating,
+    build_transformation,
     plating_deck,
     transformation_deck,
 )
-from lab.part import Part
 from lab.targets import LiquidHandler
 
-PSB1C3 = Part("https://sbolcanvas.org/pSB1C3/1")
-J23101 = Part("https://sbolcanvas.org/J23101/1")
-J23106 = Part("https://sbolcanvas.org/J23106/1")
-B0034 = Part("https://sbolcanvas.org/B0034/1")
-GFP = Part("https://sbolcanvas.org/GFP/1")
-RFP = Part("https://sbolcanvas.org/RFP/1")
-B0015 = Part("https://sbolcanvas.org/B0015/1")
-DH5ALPHA = Part("https://sbolcanvas.org/DH5alpha/1")
-BL21 = Part("https://sbolcanvas.org/BL21/1")
-PLASMID_1 = Part("https://SBOL2Build.org/composite_plasmid_1/1")
-PLASMID_2 = Part("https://SBOL2Build.org/composite_plasmid_2/1")
-STRAIN_1 = Part("https://SBOL2Build.org/composite_strain_1/1")
-STRAIN_2 = Part("https://SBOL2Build.org/composite_strain_2/1")
-STRAIN_3 = Part("https://SBOL2Build.org/composite_strain_3/1")
-STRAIN_4 = Part("https://SBOL2Build.org/composite_strain_4/1")
+PSB1C3 = sbol3.Component("https://sbolcanvas.org/pSB1C3", sbol3.SBO_DNA)
+J23101 = sbol3.Component("https://sbolcanvas.org/J23101", sbol3.SBO_DNA)
+J23106 = sbol3.Component("https://sbolcanvas.org/J23106", sbol3.SBO_DNA)
+B0034 = sbol3.Component("https://sbolcanvas.org/B0034", sbol3.SBO_DNA)
+GFP = sbol3.Component("https://sbolcanvas.org/GFP", sbol3.SBO_DNA)
+RFP = sbol3.Component("https://sbolcanvas.org/RFP", sbol3.SBO_DNA)
+B0015 = sbol3.Component("https://sbolcanvas.org/B0015", sbol3.SBO_DNA)
+DH5ALPHA = sbol3.Component("https://sbolcanvas.org/DH5alpha", sbol3.SBO_FUNCTIONAL_ENTITY)
+BL21 = sbol3.Component("https://sbolcanvas.org/BL21", sbol3.SBO_FUNCTIONAL_ENTITY)
+PLASMID_1 = sbol3.Component("https://SBOL2Build.org/composite_plasmid_1", sbol3.SBO_DNA)
+PLASMID_2 = sbol3.Component("https://SBOL2Build.org/composite_plasmid_2", sbol3.SBO_DNA)
+STRAIN_1 = sbol3.Component("https://SBOL2Build.org/composite_strain_1", sbol3.SBO_FUNCTIONAL_ENTITY)
+STRAIN_2 = sbol3.Component("https://SBOL2Build.org/composite_strain_2", sbol3.SBO_FUNCTIONAL_ENTITY)
+STRAIN_3 = sbol3.Component("https://SBOL2Build.org/composite_strain_3", sbol3.SBO_FUNCTIONAL_ENTITY)
+STRAIN_4 = sbol3.Component("https://SBOL2Build.org/composite_strain_4", sbol3.SBO_FUNCTIONAL_ENTITY)
+
+designs = sbol3.Document()
+designs.add(
+    [
+        BSAI,
+        PSB1C3,
+        J23101,
+        J23106,
+        B0034,
+        GFP,
+        RFP,
+        B0015,
+        DH5ALPHA,
+        BL21,
+        PLASMID_1,
+        PLASMID_2,
+        STRAIN_1,
+        STRAIN_2,
+        STRAIN_3,
+        STRAIN_4,
+    ]
+)
 
 ASSEMBLIES = (
     Assembly(
-        id="assembly-1",
         product=PLASMID_1,
         backbone=PSB1C3,
         parts=[J23101, B0034, GFP, B0015],
         restriction_enzyme=BSAI,
     ),
     Assembly(
-        id="assembly-2",
         product=PLASMID_2,
         backbone=PSB1C3,
         parts=[J23106, B0034, RFP, B0015],
@@ -53,25 +74,21 @@ ASSEMBLIES = (
 
 STRAINS = (
     Transformation(
-        id="transformation-1",
         strain=STRAIN_1,
         chassis=DH5ALPHA,
         plasmids=[PLASMID_1],
     ),
     Transformation(
-        id="transformation-2",
         strain=STRAIN_2,
         chassis=DH5ALPHA,
         plasmids=[PLASMID_2],
     ),
     Transformation(
-        id="transformation-3",
         strain=STRAIN_3,
         chassis=BL21,
         plasmids=[PLASMID_1],
     ),
     Transformation(
-        id="transformation-4",
         strain=STRAIN_4,
         chassis=BL21,
         plasmids=[PLASMID_2],
@@ -90,28 +107,31 @@ def main() -> None:
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
     liquid_handler = None if args.target == "manual" else LiquidHandler(args.target)
+    protocol = build_assembly(ASSEMBLIES, name="sbol-loop-assembly")
     assembled = compile(
-        AssemblyRequest(id="sbol-loop-assembly", assemblies=ASSEMBLIES),
+        protocol,
         deck=None if liquid_handler is None else assembly_deck(),
         liquid_handler=liquid_handler,
+        to=None,
     )
+    protocol = build_transformation(STRAINS, inputs=assembled.manifest, name="heat-shock")
     transformed = compile(
-        TransformationRequest(id="heat-shock", transformations=STRAINS),
+        protocol,
         deck=None if liquid_handler is None else transformation_deck(),
         liquid_handler=liquid_handler,
-        inputs=assembled.manifest,
+        to=None,
     )
+    protocol = build_plating(transformed.manifest)
     plated = compile(
-        PlatingRequest(
-            id="plating",
-            sample_ids=tuple(sample.id for sample in transformed.manifest.samples),
-            source_stage_id=transformed.manifest.protocol_id,
-        ),
+        protocol,
         deck=None if liquid_handler is None else plating_deck(),
         liquid_handler=liquid_handler,
-        inputs=transformed.manifest,
+        to=None,
     )
     out = Path(args.out or f"build/cloning/{args.target}")
+    out.mkdir(parents=True, exist_ok=True)
+    assert not designs.validate().errors
+    designs.write(str(out / "designs.ttl"), sbol3.TURTLE)
     for name, compiled in (
         ("assembly", assembled),
         ("transformation", transformed),

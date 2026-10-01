@@ -24,10 +24,7 @@ from lab.experiments.cloning.stages import (
 from lab.experiments.cloning.types import (
     BSAI,
     Assembly,
-    AssemblyRequest,
-    PlatingRequest,
     Transformation,
-    TransformationRequest,
 )
 from lab.experiments.cloning.workflow import golden_gate
 
@@ -35,14 +32,11 @@ __all__ = [
     "Assembly",
     "AssemblyLayout",
     "AssemblyReaction",
-    "AssemblyRequest",
     "AssemblyVolumes",
     "BSAI",
-    "PlatingRequest",
     "PlatingVolumes",
     "Transformation",
     "TransformationLayout",
-    "TransformationRequest",
     "assembly_deck",
     "build_assembly",
     "build_plating",

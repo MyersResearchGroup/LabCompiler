@@ -4,7 +4,7 @@ Robot workflows build and compile each stage separately with ``lab.compile`` and
 pass the output manifest to the next stage.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
 from lab.experiments.cloning.addresses import well_at
 from lab.experiments.cloning.stages.assembly import layout_assembly, record_assembly
@@ -13,13 +13,14 @@ from lab.experiments.cloning.stages.transformation import (
     layout_transformation,
     record_transformation,
 )
+from lab.experiments.cloning.types import Assembly, Transformation
 from lab.protocol import Protocol
 from lab.units import uL
 
 
 def golden_gate(
-    assemblies: Sequence[Mapping[str, object]],
-    strains: Sequence[Mapping[str, object]],
+    assemblies: Sequence[Assembly],
+    strains: Sequence[Transformation],
 ) -> Protocol:
     """Assemble, transform, and plate caller-supplied designs. Compile as manual."""
     protocol = Protocol(
@@ -44,12 +45,12 @@ def golden_gate(
         capacity=15000 * uL,
         dead_volume=0 * uL,
     )
-    assembly = layout_assembly(assemblies)
+    assembly = layout_assembly([assembly._inputs() for assembly in assemblies])
     locations = {
         key: [well_at(assembly_plate, index).name for index in indexes]
         for key, indexes in assembly.products.items()
     }
-    transformation = layout_transformation(list(strains), locations)
+    transformation = layout_transformation([strain._inputs() for strain in strains], locations)
     for index, material, volume in assembly.stocks:
         protocol.load(well_at(reagents, index), material, volume=volume * uL)
     for index, material, volume in (*transformation.cell_stocks, *transformation.media_stocks):

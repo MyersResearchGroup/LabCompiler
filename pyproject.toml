@@ -20,7 +20,10 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
 ]
-dependencies = ["pint>=0.24,<0.27"]
+dependencies = [
+    "pint>=0.24,<0.27",
+    "sbol3==1.2.0.post0",
+]
 
 [project.urls]
 Homepage = "https://github.com/the-lab-compiler/lab-py"
@@ -87,5 +90,5 @@ check_untyped_defs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["opentrons.*", "pylabrobot.*"]
+module = ["opentrons.*", "pylabrobot.*", "sbol3.*"]
 ignore_missing_imports = true
