@@ -3,16 +3,20 @@
 import hashlib
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from importlib.resources import files as resource_files
 from pathlib import Path
 from typing import Any, overload
 from typing import Protocol as Interface
 
 import lab.documents as documents
+import lab.methods as methods
 from lab._version import __version__
 from lab.artifacts import write_bundle
 from lab.deck import Deck
+from lab.experiment import ExperimentPlan
 from lab.experiments.cloning.stages.assembly import build_assembly
 from lab.experiments.cloning.stages.plating import build_plating
 from lab.experiments.cloning.stages.transformation import build_transformation
@@ -23,6 +27,7 @@ from lab.experiments.cloning.types import (
     Transformation,
     TransformationRequest,
 )
+from lab.labop import export as export_labop
 from lab.model import RecordedProtocol, encode
 from lab.operations import Distribute, Mix, Transfer
 from lab.protocol import Protocol
@@ -190,6 +195,73 @@ def _compile_protocol(
     return Compilation(recorded, prepared, tuple(volumes.items()))
 
 
+@dataclass(frozen=True, kw_only=True)
+class ExperimentCompilation:
+    experiment: ExperimentPlan
+    stages: tuple[Compilation, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.stages, tuple) or len(self.stages) != len(self.experiment.stages):
+            raise ValueError("Compile every experiment stage into an immutable tuple")
+        if any(
+            compilation.protocol != stage.protocol
+            for compilation, stage in zip(self.stages, self.experiment.stages, strict=True)
+        ):
+            raise ValueError("Stage compilations must use the frozen experiment's protocols")
+
+    @property
+    def files(self) -> dict[str, str]:
+        files = {
+            "experiment.json": self.experiment.plan_json,
+            "provenance.ttl": self.experiment.provenance.to_turtle(),
+            "protocol.labop.ttl": export_labop(self.experiment).text,
+            "methods.md": methods.render(self.experiment),
+        }
+        files.update({f"inputs/{item.name}": item.text for item in self.experiment.inputs})
+        for name in ("lab.ttl", "labop.ttl", "uml.ttl", "upstream.json", "LICENSE.txt"):
+            files[f"schemas/{name}"] = (
+                resource_files("lab.labop")
+                .joinpath(
+                    "resources",
+                    name,
+                )
+                .read_text(encoding="utf-8")
+            )
+        for index, compilation in enumerate(self.stages, 1):
+            files.update(
+                {f"stages/{index}/{name}": text for name, text in compilation.files.items()}
+            )
+        if self.experiment.build_json is not None:
+            files["build.json"] = self.experiment.build_json
+        checksums = {
+            name: hashlib.sha256(text.encode()).hexdigest() for name, text in sorted(files.items())
+        }
+        files["bundle.json"] = canonical_json(
+            {
+                "format": "lab.bundle.v1",
+                "experiment": self.experiment.identity,
+                "semantic_sha256": self.experiment.digest,
+                "sha256": checksums,
+                "stages": [
+                    {
+                        "protocol": compilation.protocol.identity,
+                        "target": compilation.target.name,
+                        "plan_sha256": compilation.digest,
+                    }
+                    for compilation in self.stages
+                ],
+            }
+        )
+        return files
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(self.files["bundle.json"].encode()).hexdigest()
+
+    def write(self, directory: str | Path) -> Path:
+        return write_bundle(directory, self.files)
+
+
 class _DefaultOutput:
     """Marks compile's default output directory."""
 
@@ -272,24 +344,35 @@ def compile(
 ) -> Compilation: ...
 
 
+@overload
+def compile(
+    protocol: ExperimentPlan,
+    target: Target | LiquidHandler | Mapping[str, Target | Deck],
+    *,
+    liquid_handler: LiquidHandler | None = None,
+    to: str | Path | None = ...,
+) -> ExperimentCompilation: ...
+
+
 def compile(
     protocol: (
         Protocol
         | RecordedProtocol
+        | ExperimentPlan
         | Assembly
         | AssemblyRequest
         | Transformation
         | TransformationRequest
         | PlatingRequest
     ),
-    target: Target | None = None,
+    target: Target | LiquidHandler | Mapping[str, Target | Deck] | None = None,
     *,
     deck: Deck | None = None,
     liquid_handler: LiquidHandler | None = None,
     inputs: OutputManifest | None = None,
     to: str | Path | None | _DefaultOutput = _DEFAULT_OUTPUT,
-) -> Compilation:
-    """Compile a protocol or a cloning request.
+) -> Compilation | ExperimentCompilation:
+    """Compile a protocol, an experiment, or a cloning request.
 
     One assembly uses its id as the protocol name. An assembly request names a
     protocol that holds every assembly. One transformation uses its id as the
@@ -300,12 +383,48 @@ def compile(
     ``LAB_HOME`` replaces ``~/.lab``. ``to=None`` skips the write. A deck
     contains shared requirements and optional Lab-owned layouts. The selected
     backend validates and translates its layout or supported preset. Concrete
-    backend targets are also accepted for low-level integrations.
+    backend targets are also accepted for low-level integrations. An experiment
+    accepts a handler, one document target, or an exact stage-to-target/deck
+    mapping; use its compilation's write() method to save the complete bundle.
     """
     if inputs is not None and not isinstance(
         protocol, (Transformation, TransformationRequest, PlatingRequest)
     ):
         raise TypeError("Pass inputs with a transformation or plating request.")
+    if isinstance(protocol, ExperimentPlan):
+        if deck is not None or isinstance(target, Deck):
+            raise TypeError("Map stage identities to decks when compiling an experiment")
+        experiment_target = target if target is not None else Manual()
+        if isinstance(experiment_target, Mapping) and set(experiment_target) != {
+            stage.identity for stage in protocol.stages
+        }:
+            raise ValueError("Hardware mapping must cover exactly the experiment's stages")
+        stages = []
+        for stage in protocol.stages:
+            stage_target = (
+                stage.deck
+                if isinstance(experiment_target, LiquidHandler)
+                else experiment_target[stage.identity]
+                if isinstance(experiment_target, Mapping)
+                else experiment_target
+            )
+            handler = (
+                experiment_target
+                if isinstance(experiment_target, LiquidHandler)
+                else liquid_handler
+            )
+            if stage.external:
+                if isinstance(experiment_target, Mapping) and not isinstance(stage_target, Manual):
+                    raise ValueError("Map external preparation stages to Manual targets")
+                stage_target = Manual()
+                handler = None
+            stages.append(_compile_protocol(stage.protocol, stage_target, liquid_handler=handler))
+        experiment_compilation = ExperimentCompilation(experiment=protocol, stages=tuple(stages))
+        if to is not None and not isinstance(to, _DefaultOutput):
+            experiment_compilation.write(to)
+        return experiment_compilation
+    if isinstance(target, (LiquidHandler, Mapping)):
+        raise TypeError("A single protocol requires a target or a Deck")
     if isinstance(target, Deck):
         raise TypeError("Pass a deck with deck=.")
     if deck is not None and target is not None:
