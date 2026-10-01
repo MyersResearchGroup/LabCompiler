@@ -19,6 +19,7 @@ def main() -> None:
     import_module("lab.part")
     import_module("lab.samples")
     import_module("lab.provenance")
+    import_module("lab.inventory")
 
     package = distribution("lab-compiler")
     assert package.version == lab.__version__
