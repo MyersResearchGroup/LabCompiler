@@ -1,0 +1,18 @@
+@prefix lab: <https://the-lab-compiler.github.io/lab-py/ns#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+lab:evidenceState a rdf:Property ;
+    rdfs:comment "Nature of the assertion; recorded does not imply sequence verification or experimental success." .
+lab:unknown rdfs:label "Evidence state unspecified" .
+lab:planned rdfs:label "Prospective work or output" .
+lab:recorded rdfs:label "Recorded activity or material assertion" .
+lab:simulated rdfs:label "Simulated activity or output" .
+lab:agentKind a rdf:Property ;
+    rdfs:comment "PROV Person, Organization, or SoftwareAgent classification." .
+lab:softwareVersion a rdf:Property ;
+    rdfs:comment "Version of the software represented by this agent." .
+lab:protocol a rdf:Property ;
+    rdfs:comment "IRI of the protocol specified by a PROV Plan, for example a LabOP Protocol." .
+lab:inputMaterial rdfs:label "Material used as an input to an activity" .
+lab:planner rdfs:label "Agent responsible for planning an activity" .

@@ -73,6 +73,12 @@ For custom protocols, declare typed sample metadata with `protocol.add_sample(sa
 
 `lab.samples` also defines `Location(resource, well)`, `SamplePlacement`, and `OutputManifest`. Recorded operations, sample placements, target bindings, and final volume accounting use the same logical `Location` type. For example, an output placement's `location` can be used directly as a key in `dict(compiled.final_volumes)`. `lab.part.Part` identifies a biological part by its SBOL IRI; cloning types and stage builders live under `lab.experiments.cloning`.
 
+## Biological designs and provenance
+
+`lab.provenance` provides immutable SBOL3 designs, material implementations, activities, qualified usages and associations, agents, and plans. Author a `Document`, explicitly add its objects, and call `freeze()` to validate references and obtain a reproducible snapshot. Import and export local Turtle with `Document.read()` and `snapshot.write()`, or exchange a detached pySBOL3 document with `from_sbol3()` and `to_sbol3()`.
+
+See the [provenance guide](docs/provenance.md) and run `uv run --no-sync python -m examples.provenance` for an authoring and round-trip example.
+
 ## Describe a deck
 
 This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/deck_layouts.py).
