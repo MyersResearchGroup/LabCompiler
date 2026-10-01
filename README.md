@@ -57,24 +57,6 @@ compiled = compile(
 )
 ```
 
-`lab.compile()` accepts a `Protocol`. It captures an immutable snapshot, validates resources and volumes, prepares the target, and returns one `Compilation`. Inspect `compiled.protocol` for the captured snapshot. All targets and the document renderer consume those same recorded operations.
-
-`build_assembly()` takes a sequence of `Assembly` recipes; `build_transformation()` takes a sequence of `Transformation` recipes. Their design fields are native `sbol3.Component` objects, including components loaded from an SBOL file with `designs.read()`. Recipe fields specify the materials used by the procedure; SBOL owns their biological descriptions. Builders copy identities into protocol samples so later edits to SBOL objects cannot change the recorded plan.
-
-`transformation_deck(on_module=True)` names the DNA block, cell tubes, and reaction plate. The example writes to `~/.lab/transformation/OT-2/`. Omit `deck` and `liquid_handler` for a manual document. Set `to` to choose an output directory, or `to=None` to compile without writing. The [transformation example](examples/transformation.py) uses native SBOL designs and explicit procedure quantities.
-
-## Samples and protocol outputs
-
-`compiled.manifest` contains declared output samples and logical placements. Pass it as `inputs=` to `build_transformation()`, then pass the resulting transformation manifest to `build_plating()`. The [cloning example](examples/cloning.py) shows assembly, transformation, and plating as separately authored and compiled protocols. Plating processes the manifest's samples in their declared order. Both downstream builders require their source samples to occupy one logical container.
-
-For custom protocols, use `protocol.add_sample(sample, at=well, is_input=True)` or `is_output=True`. `Sample.design` and `Sample.implementation` hold optional SBOL identity strings. Parent IDs identify contributions in the same protocol; imported samples identify their upstream protocol and sample separately. Compilation checks references, locations, and cyclic lineage. Manifests describe planned outputs.
-
-`lab.samples` also defines `Location(resource, well)`, `SamplePlacement`, and `OutputManifest`. Recorded operations, samples, target bindings, and volume accounting share that logical location type. Native SBOL documents remain caller-owned and can be written alongside the compilation artifacts.
-
-## SBOL provenance
-
-Protocol samples can link to native pySBOL3 designs and implementations by identity. The [SBOL provenance guide](docs/sbol-provenance.md) covers authoring, validation, and annotation propagation. Run `uv run python -m examples.sbol_provenance` for an example.
-
 ## Describe a deck
 
 This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/deck_layouts.py).
@@ -122,10 +104,6 @@ deck = Deck(
     ),
 )
 ```
-
-The container ids, `sources` and `assay`, match the names used by the protocol. `DeckLayout` assigns each container a physical model and position, and connects the pipette to its tip rack. A deck can include additional layouts for Flex or STAR using the same container ids.
-
-A deck with explicit layouts must include one for the selected liquid handler. Preset decks, such as `transformation_deck`, instead use `Container` and `DeckSite` from `lab.deck` to assign containers to supported placement groups. A bare `ContainerSpec` requires an explicit layout.
 
 ## Describe physical layouts in Lab
 
@@ -187,10 +165,6 @@ The cloning example writes separate `assembly`, `transformation`, and `plating` 
 
 The manifest uses logical container and well names; physical bindings remain in `plan.json`. Rewriting an identical bundle succeeds. If any generated file would replace different contents, `write()` rejects the write before changing any bundle files.
 
-## Status
-
-Lab Compiler is an early prototype. It checks a plan and emits a document or device program for the OT-2, Flex, and STAR. Software checks are not calibration, collision safety, or qualification of a physical run. Generated instructions need a person and a facility before anyone uses them at the bench.
-
 ## Development
 
 From the repository root:
@@ -200,27 +174,6 @@ uv sync --locked --all-extras --python 3.12
 uv run --no-sync ruff check .
 uv run --no-sync mypy
 uv run --no-sync pytest
-```
-
-Shared types and compiler code live directly under `src/lab`; experiment families and target implementations have their own packages:
-
-```text
-src/lab/
-    protocol.py       # Protocol builder, Plate, Well
-    model.py          # Recorded operations, protocol snapshots, target plans
-    part.py           # SBOL part identity
-    samples.py        # Sample, Location, SamplePlacement, OutputManifest
-    labware.py        # Logical labware specifications
-    equipment.py      # Liquid handlers and equipment identifiers
-    deck.py           # Container requirements and physical layouts
-    units.py          # Quantities and unit conversion
-    compiler.py       # Compilation and output bundles
-    validation.py     # Volume, binding, and sample validation
-    documents.py      # Printable protocol rendering
-    experiments/
-        cloning/      # Cloning types, stage builders, decks, and workflow composition
-            types.py  # Assembly and transformation designs, stage inputs
-    targets/          # Manual, Opentrons, and STAR backends
 ```
 
 See the [release guide](https://github.com/the-lab-compiler/lab-py/blob/master/docs/releasing.md) for package validation and PyPI publishing.

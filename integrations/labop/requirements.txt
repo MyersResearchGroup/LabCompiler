@@ -1,0 +1,6 @@
+# Installed only in this integration's separate virtual environment.
+labop @ git+https://github.com/Bioprotocols/labop@2e2bd88150c71a440771fd369f40295dfd622324
+sbol3==1.2.0.post0
+sbol-factory==1.1.2
+# Upstream imports IPython from its Markdown converter during package import.
+ipython==9.17.1

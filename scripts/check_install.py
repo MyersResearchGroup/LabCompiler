@@ -45,7 +45,9 @@ def main() -> None:
         assert plan["compiler_version"] == package.version
         assert (output / "protocol.html").stat().st_size > 0
 
-    assert not any(name.split(".")[0] in {"opentrons", "pylabrobot"} for name in sys.modules)
+    isolated = {"opentrons", "pylabrobot", "labop", "uml", "sbol_factory"}
+    assert not any(name.split(".")[0] in isolated for name in sys.modules)
+    assert not files("lab").joinpath("labop").is_dir()
     print(f"lab-compiler {package.version}: installed package check passed")
 
 

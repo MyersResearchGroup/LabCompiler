@@ -56,6 +56,7 @@ include = [
     "/tests",
     "/examples",
     "/scripts",
+    "/integrations",
     "/docs",
     "/README.md",
     "/LICENSE",
@@ -85,10 +86,10 @@ asyncio_mode = "auto"
 markers = ["integration: requires the optional robot SDKs; never connects to hardware"]
 
 [tool.mypy]
-files = ["src/lab"]
+files = ["src/lab", "integrations/labop"]
 check_untyped_defs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["opentrons.*", "pylabrobot.*", "sbol3.*"]
+module = ["opentrons.*", "pylabrobot.*", "sbol3.*", "labop.*", "uml.*"]
 ignore_missing_imports = true
