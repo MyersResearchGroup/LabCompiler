@@ -4,6 +4,7 @@ Stage recipes live in :mod:`lab.experiments.cloning.stages`. A deck names
 containers and sites; compilation lowers it for one handler.
 """
 
+from lab.experiments.cloning.build import build
 from lab.experiments.cloning.decks import assembly_deck, plating_deck, transformation_deck
 from lab.experiments.cloning.methods import (
     AssemblyMethod,
@@ -74,6 +75,7 @@ __all__ = [
     "PlatingMethod",
     "PlatingRecipe",
     "Reagent",
+    "build",
     "plan",
     "AssemblyLayout",
     "AssemblyReaction",

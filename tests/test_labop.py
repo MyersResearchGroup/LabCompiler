@@ -1,3 +1,4 @@
+import hashlib
 import json
 from importlib.resources import files
 from urllib.parse import unquote
@@ -7,42 +8,53 @@ from rdflib import OWL, RDF, RDFS, Graph, URIRef
 
 from lab import ExperimentPlan, Protocol, ProtocolStage, celsius, seconds, uL
 from lab.deck import Container, Deck, DeckSite
+from lab.experiments import cloning
 from lab.labop import export
 from lab.labop.primitives import LAB, LABOP, LIQUID, OM, SBOL, UML
 from lab.labware import PCR_PLATE_96
 from lab.provenance import Document
+from tests.cloning_integration_fixture import integrated_case
+from tests.planning_fixture import multilevel_case, planning_case
 
 
-def artifact(*, operations=True):
-    protocol = Protocol("Operation vocabulary", identity="https://example.org/operations")
-    plate = protocol.plate("plate", capacity=100 * uL)
-    protocol.load(plate["A1"], "water", volume=50 * uL)
-    protocol.set_temperature(plate, celsius(25))
-    protocol.distribute(plate["A1"], (plate["A2"], plate["A3"]), volume=2 * uL, air_gap=1 * uL)
-    protocol.wait(1 * seconds)
-    protocol.manual("Inspect the plate")
-    protocol.thermocycle(
-        plate, ((celsius(25), 1 * seconds),), lid_temperature=celsius(40), block_volume=10 * uL
-    )
-    experiment = ExperimentPlan(
-        identity="https://example.org/operation_experiment",
-        provenance=Document(namespace="https://example.org/").freeze(),
-        stages=(
-            ProtocolStage(
-                identity="https://example.org/operation_stage",
-                protocol=protocol.snapshot(),
-                deck=Deck(
-                    containers=(
-                        Container(id="plate", labware=PCR_PLATE_96, site=DeckSite.THERMOCYCLER),
-                    )
+def artifact(*, operations=False):
+    if operations == "cloning":
+        request, inputs = integrated_case(count=1)
+        experiment = cloning.build(cloning.plan(request, **inputs))
+        return experiment, export(experiment)
+    if operations:
+        protocol = Protocol("Operation vocabulary", identity="https://example.org/operations")
+        plate = protocol.plate("plate", capacity=100 * uL)
+        protocol.load(plate["A1"], "water", volume=50 * uL)
+        protocol.set_temperature(plate, celsius(25))
+        protocol.distribute(plate["A1"], (plate["A2"], plate["A3"]), volume=2 * uL, air_gap=1 * uL)
+        protocol.wait(1 * seconds)
+        protocol.manual("Inspect the plate")
+        protocol.thermocycle(
+            plate, ((celsius(25), 1 * seconds),), lid_temperature=celsius(40), block_volume=10 * uL
+        )
+        experiment = ExperimentPlan(
+            identity="https://example.org/operation_experiment",
+            provenance=Document(namespace="https://example.org/").freeze(),
+            stages=(
+                ProtocolStage(
+                    identity="https://example.org/operation_stage",
+                    protocol=protocol.snapshot(),
+                    deck=Deck(
+                        containers=(
+                            Container(id="plate", labware=PCR_PLATE_96, site=DeckSite.THERMOCYCLER),
+                        )
+                    ),
                 ),
             ),
-        ),
-    )
+        )
+        return experiment, export(experiment)
+    request, inputs = planning_case()
+    experiment = cloning.build(cloning.plan(request, **inputs))
     return experiment, export(experiment)
 
 
-@pytest.mark.parametrize("operations", [True])
+@pytest.mark.parametrize("operations", [False, True, "cloning"])
 def test_labop_has_protocols_exact_semantic_actions_and_no_execution_claims(operations):
     experiment, result = artifact(operations=operations)
     graph = result.graph()
@@ -73,7 +85,7 @@ def test_labop_has_protocols_exact_semantic_actions_and_no_execution_claims(oper
     assert amounts and all(graph.value(node, OM.hasUnit) for node in amounts)
 
 
-@pytest.mark.parametrize("operations", [True])
+@pytest.mark.parametrize("operations", [False, True, "cloning"])
 def test_calls_follow_upstream_required_parameter_names_and_directions(operations):
     _, result = artifact(operations=operations)
     graph = result.graph()
@@ -102,7 +114,7 @@ def test_calls_follow_upstream_required_parameter_names_and_directions(operation
                 assert name in supplied, (behavior, name)
 
 
-@pytest.mark.parametrize("operations", [True])
+@pytest.mark.parametrize("operations", [False, True, "cloning"])
 def test_generated_nodes_satisfy_pinned_ontology_cardinalities(operations):
     _, result = artifact(operations=operations)
     graph = result.graph()
@@ -139,3 +151,18 @@ def test_generated_nodes_satisfy_pinned_ontology_cardinalities(operations):
     for predicate in set(graph.predicates()):
         if str(predicate).startswith((str(LABOP), str(UML))):
             assert predicate in declared, predicate
+
+
+def test_multilevel_calls_have_explicit_material_flows_and_pinned_resources():
+    request, inputs = multilevel_case()
+    experiment = cloning.build(cloning.plan(request, **inputs))
+    graph = export(experiment).graph()
+    handoff_pins = tuple(graph.subjects(LAB.handoffs))
+    assert len(handoff_pins) == 2
+    for pin in handoff_pins:
+        edge = graph.value(predicate=UML.target, object=pin)
+        assert (edge, RDF.type, UML.ObjectFlow) in graph
+    manifest = json.loads(files("lab.labop").joinpath("resources/upstream.json").read_text())
+    for name, item in manifest["files"].items():
+        data = files("lab.labop").joinpath("resources", name).read_bytes()
+        assert hashlib.sha256(data).hexdigest() == item["sha256"]
