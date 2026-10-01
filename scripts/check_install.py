@@ -20,6 +20,7 @@ from lab.targets import Manual
 def main() -> None:
     # Verify public modules and subpackages are present in the installed distribution.
     import_module("lab.experiments.cloning")
+    import_module("lab.experiments.cloning.routes")
     import_module("lab.part")
     import_module("lab.samples")
     import_module("lab.provenance")
