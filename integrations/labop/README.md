@@ -1,6 +1,6 @@
 # Export a compilation as LabOP
 
-The optional integration reads the compiler's `lab.plan.v1` JSON artifact and writes a prospective LabOP protocol. It uses upstream LabOP's classes, primitive libraries, and SBOL serialization. No LabOP implementation, schemas, or dependency is included in the `lab-compiler` wheel.
+Because LabOP is not currently on PyPi, we have made the integration with tthe Lab Compiler optional. The integration reads the compiler's `lab.plan.v1` JSON artifact and writes a prospective LabOP protocol. It uses upstream LabOP's classes, primitive libraries, and SBOL serialization.
 
 Install the integration from a checkout, using a separate Python 3.11 or 3.12 environment:
 
