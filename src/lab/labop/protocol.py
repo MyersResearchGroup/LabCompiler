@@ -1,0 +1,461 @@
+"""Static LabOP/UML projection of protocol plans."""
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass
+from decimal import Decimal
+from urllib.parse import quote, urlsplit
+
+from rdflib import RDF, XSD, Graph, Literal, URIRef
+from rdflib.compare import to_canonical_graph
+
+from lab._identifiers import require_iri
+from lab.labop.primitives import (
+    DESCRIPTIONS,
+    EXT,
+    EXTENSIONS,
+    LAB,
+    LABOP,
+    LIQUID,
+    OM,
+    SBOL,
+    UML,
+    upstream_liquid_primitives,
+)
+from lab.model import (
+    Distribute,
+    ManualInstruction,
+    Mix,
+    RecordedProtocol,
+    SetTemperature,
+    Thermocycle,
+    Transfer,
+    Wait,
+    encode,
+)
+from lab.protocol import Protocol
+from lab.samples import Location
+from lab.validation import logical_bindings, validate
+
+
+def turtle(graph: Graph) -> str:
+    """Sorted N-Triples is also valid Turtle and gives deterministic artifacts."""
+    return (
+        "\n".join(
+            sorted(
+                line
+                for line in to_canonical_graph(graph).serialize(format="nt").splitlines()
+                if line
+            )
+        )
+        + "\n"
+    )
+
+
+@dataclass(frozen=True)
+class LabOPDocument:
+    protocol: str
+    text: str
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(self.text.encode()).hexdigest()
+
+    def graph(self) -> Graph:
+        return Graph().parse(data=self.text, format="turtle")
+
+
+class _Writer:
+    def __init__(self) -> None:
+        self.graph = Graph()
+        self.upstream = upstream_liquid_primitives()
+
+    def node(
+        self, identity: str, kind: URIRef, *, name: str | None = None, top: bool = False
+    ) -> URIRef:
+        node = URIRef(identity)
+        self.graph.add((node, RDF.type, kind))
+        self.graph.add((node, RDF.type, SBOL.TopLevel if top else SBOL.Identified))
+        self.graph.add((node, SBOL.displayId, Literal(identity.rsplit("/", 1)[-1])))
+        if top:
+            self.graph.add((node, SBOL.hasNamespace, URIRef(identity.rsplit("/", 1)[0])))
+        if name is not None:
+            self.graph.add((node, SBOL.name, Literal(name)))
+        return node
+
+    def add(self, node: URIRef, predicate: URIRef, value: URIRef | Literal) -> None:
+        self.graph.add((node, predicate, value))
+
+    def one(self, node: URIRef, predicate: URIRef) -> URIRef:
+        value = self.graph.value(node, predicate, any=False)
+        if not isinstance(value, URIRef):
+            raise ValueError(f"Expected one URI value for {node} {predicate}")
+        return value
+
+    def literal(self, identity: str, value: int | str) -> URIRef:
+        node = self.node(
+            identity, UML.LiteralInteger if isinstance(value, int) else UML.LiteralString
+        )
+        self.add(
+            node, UML.integerValue if isinstance(value, int) else UML.stringValue, Literal(value)
+        )
+        return node
+
+    def measure(self, identity: str, value: Decimal | int, unit: URIRef) -> URIRef:
+        node = self.node(identity, OM.Measure)
+        self.add(node, OM.hasNumericalValue, Literal(str(value), datatype=XSD.decimal))
+        self.add(node, OM.hasUnit, unit)
+        return node
+
+    def parameter(
+        self,
+        behavior: URIRef,
+        name: str,
+        kind: URIRef,
+        index: int,
+        *,
+        direction: str = "in",
+        required: bool = True,
+    ) -> URIRef:
+        ordered = self.node(f"{behavior}/parameter_{index}", UML.OrderedPropertyValue)
+        parameter = self.node(f"{ordered}/parameter", UML.Parameter, name=name)
+        self.add(behavior, UML.ownedParameter, ordered)
+        self.add(ordered, UML.indexValue, Literal(index))
+        self.add(ordered, UML.propertyValue, parameter)
+        self.add(parameter, UML.direction, UML[direction])
+        self.add(parameter, UML.type, kind)
+        self.add(parameter, UML.isOrdered, Literal(True))
+        self.add(parameter, UML.isUnique, Literal(True))
+        for field, count in ((UML.lowerValue, int(required)), (UML.upperValue, 1)):
+            self.add(
+                parameter, field, self.literal(f"{parameter}/{str(field).split('#')[-1]}", count)
+            )
+        return ordered
+
+    def primitive(self, name: str, *, upstream: bool = False) -> URIRef:
+        base = (
+            "https://bioprotocols.org/labop/primitives/sample_arrays/"
+            if name == "PlateCoordinates"
+            else LIQUID
+        )
+        identity = URIRef((base if upstream else EXT) + name)
+        if (identity, RDF.type, LABOP.Primitive) in self.graph:
+            return identity
+        if upstream:
+            # Include this primitive and all of its owned definitions, unchanged.
+            for subject, predicate, obj in self.upstream:
+                if str(subject) == str(identity) or str(subject).startswith(str(identity) + "/"):
+                    self.graph.add((subject, predicate, obj))
+        else:
+            self.node(str(identity), LABOP.Primitive, name=name, top=True)
+            self.add(identity, SBOL.description, Literal(DESCRIPTIONS[name]))
+            for index, parameter in enumerate(EXTENSIONS[name]):
+                self.parameter(
+                    identity, parameter.name, parameter.type, index, required=parameter.required
+                )
+        return identity
+
+    def flow(self, protocol: URIRef, source: URIRef, target: URIRef, *, control: bool) -> None:
+        index = len(tuple(self.graph.objects(protocol, UML.edge)))
+        edge = self.node(f"{protocol}/edge_{index}", UML.ControlFlow if control else UML.ObjectFlow)
+        self.add(protocol, UML.edge, edge)
+        self.add(edge, UML.source, source)
+        self.add(edge, UML.target, target)
+
+    def pin(
+        self,
+        action: URIRef,
+        name: str,
+        value: URIRef | None = None,
+        *,
+        owned: bool = False,
+        output: bool = False,
+    ) -> URIRef:
+        identity = f"{action}/{'output' if output else 'input'}_{name}"
+        pin = self.node(
+            identity,
+            UML.OutputPin if output else UML.ValuePin if value is not None else UML.InputPin,
+            name=name,
+        )
+        self.add(action, UML.output if output else UML.input, pin)
+        self.add(pin, UML.isOrdered, Literal(True))
+        self.add(pin, UML.isUnique, Literal(True))
+        if value is not None:
+            literal = self.node(
+                f"{pin}/value", UML.LiteralIdentified if owned else UML.LiteralReference
+            )
+            self.add(literal, UML.identifiedValue if owned else UML.referenceValue, value)
+            self.add(pin, UML.value, literal)
+        return pin
+
+    def chain(self, protocol: URIRef, actions: list[URIRef]) -> None:
+        initial = self.node(f"{protocol}/initial", UML.InitialNode)
+        final = self.node(f"{protocol}/final", UML.FlowFinalNode)
+        for node in (initial, *actions, final):
+            self.add(protocol, UML.node, node)
+        nodes = [initial, *actions, final]
+        for start, end in zip(nodes, nodes[1:], strict=False):
+            self.flow(protocol, start, end, control=True)
+
+    def fork(self, protocol: URIRef, source: URIRef) -> URIRef:
+        node = self.node(f"{source}/fork", UML.ForkNode)
+        self.add(protocol, UML.node, node)
+        self.flow(protocol, source, node, control=False)
+        return node
+
+    def scalar_pin(self, action: URIRef, name: str, value: int | str) -> URIRef:
+        pin = self.pin(action, name)
+        self.graph.remove((pin, RDF.type, UML.InputPin))
+        self.add(pin, RDF.type, UML.ValuePin)
+        self.add(pin, UML.value, self.literal(f"{pin}/value", value))
+        return pin
+
+    def amount_pin(self, action: URIRef, name: str, value: Decimal | int, unit: URIRef) -> URIRef:
+        return self.pin(
+            action,
+            name,
+            self.measure(
+                f"{action}/input_{name}/value/measure",
+                value,
+                unit,
+            ),
+            owned=True,
+        )
+
+
+def _semantic(value: object) -> object:
+    """Encode protocol meaning without developer file paths or line numbers."""
+
+    def clean(item: object) -> object:
+        if isinstance(item, dict):
+            return {key: clean(val) for key, val in item.items() if key != "origin"}
+        if isinstance(item, list):
+            return [clean(val) for val in item]
+        return item
+
+    return clean(encode(value))
+
+
+def export(protocol: Protocol | RecordedProtocol, *, identity: str | None = None) -> LabOPDocument:
+    """Project one validated protocol snapshot into static LabOP, without hardware."""
+    recorded = protocol.snapshot() if isinstance(protocol, Protocol) else protocol
+    if not isinstance(recorded, RecordedProtocol):
+        raise TypeError("Export a Protocol or RecordedProtocol")
+    validate(recorded, logical_bindings(recorded))
+    writer = _Writer()
+    content = json.dumps(_semantic(recorded), sort_keys=True, ensure_ascii=False, allow_nan=False)
+    digest = hashlib.sha256(content.encode()).hexdigest()
+    if identity is None:
+        identity = f"https://the-lab-compiler.github.io/lab-py/protocols/p_{digest}"
+    require_iri(identity)
+    parsed = urlsplit(identity)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or not parsed.path.strip("/")
+        or parsed.query
+        or parsed.fragment
+        or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", identity.rsplit("/", 1)[-1])
+    ):
+        raise ValueError(
+            "A LabOP identity needs an absolute HTTP(S) IRI ending in an SBOL display ID"
+        )
+    _protocol(writer, recorded, identity, digest)
+    return LabOPDocument(str(identity), turtle(writer.graph))
+
+
+def _protocol(writer: _Writer, recorded: RecordedProtocol, identity: str, digest: str) -> URIRef:
+    protocol = writer.node(identity, LABOP.Protocol, name=recorded.name, top=True)
+    writer.add(protocol, SBOL.description, Literal(recorded.description))
+    writer.add(protocol, LAB.planDigest, Literal(digest))
+    writer.add(protocol, LAB.evidenceState, LAB.planned)
+    sources: dict[str, URIRef] = {}
+    samples = {sample.id: sample for sample in recorded.samples}
+    for index, resource in enumerate(recorded.resources):
+        name = f"collection_{index}"
+        ordered = writer.parameter(protocol, name, LABOP.SampleCollection, index)
+        parameter = writer.one(ordered, UML.propertyValue)
+        default = writer.node(f"{parameter}/default", UML.LiteralIdentified)
+        array = writer.node(f"{default}/samples", LABOP.SampleArray, name=resource.name)
+        writer.add(parameter, UML.defaultValue, default)
+        writer.add(default, UML.identifiedValue, array)
+        container = writer.node(
+            f"{protocol}/container_{index}", LABOP.ContainerSpec, name=resource.name, top=True
+        )
+        writer.add(container, LAB.rows, Literal(resource.rows))
+        writer.add(container, LAB.columns, Literal(resource.columns))
+        writer.add(
+            container,
+            LAB.capacity,
+            writer.measure(f"{container}/capacity", resource.capacity, OM.microlitre),
+        )
+        writer.add(array, LABOP.containerType, container)
+        writer.add(array, LAB.sampleFormat, Literal("json"))
+        fills = {fill.well: fill for fill in resource.fills}
+        writer.add(
+            array,
+            LABOP.initial_contents,
+            Literal(
+                quote(
+                    json.dumps(
+                        {
+                            well: fills[well].material if well in fills else None
+                            for well in resource.wells
+                        }
+                    )
+                )
+            ),
+        )
+        writer.add(array, LAB.resource, Literal(resource.name))
+        for fill in resource.fills:
+            node = writer.node(f"{array}/initial_{fill.well}", LAB.InitialMaterial)
+            writer.add(array, LAB.initialMaterial, node)
+            writer.add(node, LAB.coordinates, Literal(fill.well))
+            writer.add(node, LAB.materialIdentity, Literal(fill.material))
+            writer.add(
+                node, LAB.volume, writer.measure(f"{node}/volume", fill.volume, OM.microlitre)
+            )
+        for place in recorded.placements:
+            if place.location.resource != resource.name:
+                continue
+            sample = samples[place.sample_id]
+            node = writer.node(f"{array}/sample_{place.location.well}", LAB.SampleAssertion)
+            writer.add(array, LAB.plannedSample, node)
+            writer.add(node, LAB.coordinates, Literal(place.location.well))
+            writer.add(node, LAB.sampleIdentity, Literal(sample.id))
+            writer.add(node, LAB.sampleRole, Literal(sample.role))
+            for predicate, ref in (
+                (LAB.design, sample.design),
+                (LAB.implementation, sample.implementation),
+            ):
+                if ref is not None:
+                    writer.add(node, predicate, URIRef(ref))
+        input_node = writer.node(f"{protocol}/input_{index}", UML.ActivityParameterNode)
+        writer.add(protocol, UML.node, input_node)
+        writer.add(input_node, UML.parameter, ordered)
+        sources[resource.name] = writer.fork(protocol, input_node)
+
+    actions: list[URIRef] = []
+    selections: dict[Location, URIRef] = {}
+
+    def well_source(location: Location) -> URIRef:
+        if location not in selections:
+            action = writer.node(f"{protocol}/select_{len(selections)}", UML.CallBehaviorAction)
+            writer.add(action, UML.behavior, writer.primitive("PlateCoordinates", upstream=True))
+            pin = writer.pin(action, "source")
+            writer.flow(protocol, sources[location.resource], pin, control=False)
+            writer.scalar_pin(action, "coordinates", location.well)
+            output = writer.pin(action, "samples", output=True)
+            selections[location] = writer.fork(protocol, output)
+            actions.append(action)
+        return selections[location]
+
+    def collection_pin(action: URIRef, name: str, source: URIRef) -> None:
+        writer.flow(protocol, source, writer.pin(action, name), control=False)
+
+    for index, step in enumerate(recorded.steps):
+        action = writer.node(f"{protocol}/step_{index + 1}", UML.CallBehaviorAction)
+        writer.add(action, LAB.semanticStep, Literal(json.dumps(_semantic(step), sort_keys=True)))
+        if isinstance(step, Transfer):
+            primitive = writer.primitive("Transfer", upstream=True)
+            collection_pin(action, "source", well_source(step.source))
+            collection_pin(action, "destination", well_source(step.destination))
+            writer.amount_pin(action, "amount", step.volume, OM.microlitre)
+        elif isinstance(step, Mix):
+            primitive = writer.primitive("PipetteMix", upstream=True)
+            collection_pin(action, "samples", well_source(step.location))
+            writer.amount_pin(action, "amount", step.volume, OM.microlitre)
+            writer.amount_pin(action, "cycleCount", step.cycles, OM.one)
+        elif isinstance(step, Wait):
+            primitive = writer.primitive("Wait")
+            writer.amount_pin(action, "duration", step.seconds, OM.second)
+        elif isinstance(step, ManualInstruction):
+            primitive = writer.primitive("OperatorPause")
+            writer.scalar_pin(action, "instruction", step.text)
+        elif isinstance(step, Distribute):
+            primitive = writer.primitive("Distribute")
+            collection_pin(action, "source", well_source(step.source))
+            members = tuple(well_source(location) for location in step.destinations)
+            # A pure structural primitive preserves order and aliases across plates.
+            group_type = URIRef(EXT + f"OrderedGroup_{len(members)}")
+            if (group_type, RDF.type, LABOP.Primitive) not in writer.graph:
+                writer.node(str(group_type), LABOP.Primitive, top=True)
+                writer.add(
+                    group_type,
+                    SBOL.description,
+                    Literal(
+                        "Return an ordered SampleCollection of the supplied sample aliases. "
+                        "Preserve member order and duplicates; perform no laboratory operation."
+                    ),
+                )
+                for index in range(len(members)):
+                    writer.parameter(group_type, f"member_{index}", LABOP.SampleCollection, index)
+                writer.parameter(
+                    group_type, "samples", LABOP.SampleCollection, len(members), direction="out"
+                )
+            group = writer.node(f"{protocol}/group_{len(actions)}", UML.CallBehaviorAction)
+            writer.add(group, UML.behavior, group_type)
+            for index, source in enumerate(members):
+                collection_pin(group, f"member_{index}", source)
+            writer.flow(
+                protocol,
+                writer.pin(group, "samples", output=True),
+                writer.pin(action, "destinations"),
+                control=False,
+            )
+            actions.append(group)
+            writer.amount_pin(action, "amount", step.volume, OM.microlitre)
+            if step.air_gap is not None:
+                writer.amount_pin(action, "airGap", step.air_gap, OM.microlitre)
+        elif isinstance(step, (SetTemperature, Thermocycle)):
+            primitive = writer.primitive(type(step).__name__)
+            collection_pin(action, "samples", sources[step.resource])
+            if isinstance(step, SetTemperature):
+                writer.amount_pin(action, "temperature", step.celsius, OM.degreeCelsius)
+            else:
+                profile = writer.node(f"{action}/input_profile/value/profile", LAB.ThermalProfile)
+                for index, hold in enumerate(step.profile):
+                    node = writer.node(f"{profile}/hold_{index}", LAB.ThermalHold)
+                    writer.add(profile, LAB.hold, node)
+                    writer.add(node, LAB["index"], Literal(index))
+                    writer.add(
+                        node,
+                        LAB.temperature,
+                        writer.measure(f"{node}/temperature", hold.celsius, OM.degreeCelsius),
+                    )
+                    writer.add(
+                        node,
+                        LAB.duration,
+                        writer.measure(f"{node}/duration", hold.seconds, OM.second),
+                    )
+                writer.pin(action, "profile", profile, owned=True)
+                writer.scalar_pin(action, "cycles", step.cycles)
+                if step.lid_celsius is not None:
+                    writer.amount_pin(action, "lidTemperature", step.lid_celsius, OM.degreeCelsius)
+                if step.block_volume is not None:
+                    writer.amount_pin(action, "blockVolume", step.block_volume, OM.microlitre)
+        else:
+            raise TypeError(f"No LabOP mapping for {type(step).__name__}")
+        writer.add(action, UML.behavior, primitive)
+        actions.append(action)
+    ports: dict[str, str] = {}
+    for place in recorded.placements:
+        resource_name = place.location.resource
+        if place.sample_id not in recorded.output_sample_ids or resource_name in ports:
+            continue
+        name = f"result_{len(ports)}"
+        parameter = writer.parameter(
+            protocol,
+            name,
+            LABOP.SampleCollection,
+            len(recorded.resources) + len(ports),
+            direction="out",
+        )
+        node = writer.node(f"{protocol}/output_{len(ports)}", UML.ActivityParameterNode)
+        writer.add(protocol, UML.node, node)
+        writer.add(node, UML.parameter, parameter)
+        writer.flow(protocol, sources[resource_name], node, control=False)
+        ports[resource_name] = name
+    writer.chain(protocol, actions)
+    return protocol

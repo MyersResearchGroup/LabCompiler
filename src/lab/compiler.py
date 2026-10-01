@@ -12,6 +12,7 @@ from typing import Protocol as Interface
 import lab.documents as documents
 from lab._version import __version__
 from lab.deck import Deck
+from lab.labop import export as export_labop
 from lab.model import Distribute, Mix, RecordedProtocol, TargetPlan, Transfer, encode
 from lab.protocol import Protocol
 from lab.samples import Location, OutputManifest
@@ -73,7 +74,11 @@ class Compilation:
 
     @property
     def files(self) -> dict[str, str]:
-        result = {"plan.json": self.plan_json, "protocol.html": documents.render(self)}
+        result = {
+            "plan.json": self.plan_json,
+            "protocol.html": documents.render(self),
+            "protocol.labop.ttl": export_labop(self.protocol).text,
+        }
         if self.protocol.output_sample_ids:
             result["manifest.json"] = canonical_json(self.manifest.to_dict())
         if self.target.source is not None:
@@ -99,7 +104,7 @@ class _DefaultOutput:
 
 
 _DEFAULT_OUTPUT = _DefaultOutput()
-_BUNDLE_FILES = ("protocol.html", "plan.json", "manifest.json", "protocol.py")
+_BUNDLE_FILES = ("protocol.html", "plan.json", "manifest.json", "protocol.py", "protocol.labop.ttl")
 
 
 def _segment(value: str) -> str:

@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 import sbol3
 
 import lab
+from lab.labop import export
 from lab.targets import Manual
 
 
@@ -44,6 +45,7 @@ def main() -> None:
         plan = json.loads((output / "plan.json").read_text())
         assert plan["compiler_version"] == package.version
         assert (output / "protocol.html").stat().st_size > 0
+        assert (output / "protocol.labop.ttl").read_text() == export(protocol).text
 
     assert not any(name.split(".")[0] in {"opentrons", "pylabrobot"} for name in sys.modules)
     print(f"lab-compiler {package.version}: installed package check passed")

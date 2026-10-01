@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "pint>=0.24,<0.27",
     "sbol3==1.2.0.post0",
+    "rdflib>=6.1.1,<7",
 ]
 
 [project.urls]

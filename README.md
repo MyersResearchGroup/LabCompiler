@@ -75,6 +75,10 @@ For custom protocols, use `protocol.add_sample(sample, at=well, is_input=True)` 
 
 Protocol samples can link to native pySBOL3 designs and implementations by identity. The [SBOL provenance guide](docs/sbol-provenance.md) covers authoring, validation, and annotation propagation. Run `uv run python -m examples.sbol_provenance` for an example.
 
+## LabOP export
+
+`lab.labop.export(protocol)` emits a static LabOP plan directly from an authored or frozen protocol. Every compilation includes the same `protocol.labop.ttl`. See the [LabOP guide](docs/labop.md) or run `uv run python -m examples.labop_export`.
+
 ## Describe a deck
 
 This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/the-lab-compiler/lab-py/blob/master/examples/deck_layouts.py).

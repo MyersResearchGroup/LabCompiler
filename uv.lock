@@ -384,6 +384,7 @@ source = { editable = "." }
 dependencies = [
     { name = "pint", version = "0.25.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "pint", version = "0.26.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "rdflib" },
     { name = "sbol3" },
 ]
 
@@ -410,6 +411,7 @@ requires-dist = [
     { name = "opentrons", marker = "extra == 'opentrons'", specifier = "==8.8.2" },
     { name = "pint", specifier = ">=0.24,<0.27" },
     { name = "pylabrobot", marker = "extra == 'star'", specifier = "==0.2.1" },
+    { name = "rdflib", specifier = ">=6.1.1,<7" },
     { name = "sbol3", specifier = "==1.2.0.post0" },
 ]
 provides-extras = ["opentrons", "star"]
