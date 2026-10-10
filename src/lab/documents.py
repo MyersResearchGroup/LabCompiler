@@ -33,7 +33,11 @@ def describe(step: Step) -> str:
             holds = "; ".join(
                 f"{number(hold.celsius)} °C for {number(hold.seconds)} s" for hold in profile
             )
-            lid_text = "unheated lid" if lid is None else f"lid at {number(lid)} °C"
+            lid_text = (
+                "lid follows block; lid heating off below the device's heated lid range"
+                if lid is None
+                else f"lid at {number(lid)} °C"
+            )
             block = (
                 f" Reported block volume {number(block_volume)} µL."
                 if block_volume is not None
@@ -41,11 +45,15 @@ def describe(step: Step) -> str:
             )
             return (
                 f"Thermocycle all of {resource}: {holds}; {cycles} cycle(s); {lid_text}. "
-                "Wait for completion, turn off temperature control, and release the plate."
+                "Wait for completion, keep the final temperature settings, and release the plate."
                 f"{block}"
             )
         case SetTemperature(resource, celsius, _):
-            return f"Hold {resource} at {number(celsius)} °C."
+            return (
+                f"Hold {resource} at {number(celsius)} °C. "
+                "For a device with a heated lid, match its target within the heated lid range; "
+                "turn lid heating off below that range."
+            )
         case ManualInstruction(text, _):
             return f"Operator: {text}"
         case _:

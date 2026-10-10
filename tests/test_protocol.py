@@ -214,6 +214,7 @@ def test_stage_handoffs_share_wells_and_preserve_volume():
         {"celsius": "30", "seconds": "1"},
     ]
     assert "Thermocycle all of aliquots" in bundle.files["protocol.html"]
+    assert "lid follows block" in bundle.files["protocol.html"]
 
 
 def test_thermal_units_and_snapshot():

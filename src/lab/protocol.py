@@ -236,6 +236,11 @@ class Protocol:
     ) -> None:
         """Apply (temperature, duration) holds to a whole plate, then release it.
 
+        Without ``lid_temperature``, the lid follows each block temperature within
+        the device's heated lid range; below that range, lid heating is off. A supplied
+        lid temperature stays fixed throughout the profile. Temperature control remains
+        at the final hold after the plate is released.
+
         ``block_volume`` overrides the block's reported liquid volume for instruments
         that schedule ramps from that number. The ledger still uses the modeled volumes.
         """
@@ -256,7 +261,7 @@ class Protocol:
         self._steps.append(Thermocycle(plate.name, holds, cycles, lid, _origin(), block))
 
     def set_temperature(self, plate: Plate, value: Any) -> None:
-        """Hold a plate at one temperature without ending the hold when the call returns."""
+        """Hold a plate at one temperature; match its lid within the device's heated range."""
         if not isinstance(plate, Plate) or plate._owner is not self._owner:
             raise ValueError("A plate must belong to this protocol")
         if plate.name not in self._resources or plate.shape != (

@@ -128,12 +128,8 @@ def record_assembly(
             protocol.mix(destination, volume=min(layout.total, _PIPETTE_MAX) * uL, cycles=cycles)
     profile = [(celsius(42), 2 * minutes), (celsius(16), 5 * minutes)]
     inactivation = [(celsius(60), 10 * minutes), (celsius(80), 10 * minutes)]
-    protocol.thermocycle(
-        products, profile, cycles=75, lid_temperature=celsius(42), block_volume=30 * uL
-    )
-    protocol.thermocycle(
-        products, inactivation, cycles=1, lid_temperature=celsius(42), block_volume=30 * uL
-    )
+    protocol.thermocycle(products, profile, cycles=75, block_volume=30 * uL)
+    protocol.thermocycle(products, inactivation, block_volume=30 * uL)
     protocol.set_temperature(products, celsius(4))
     return {
         key: tuple(well_at(products, index) for index in indexes)

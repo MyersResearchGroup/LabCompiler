@@ -39,9 +39,11 @@ EXTENSIONS = {
 DESCRIPTIONS = {
     "Wait": "Wait for the duration without changing material.",
     "OperatorPause": "Pause for the operator instruction; no material change is modeled.",
-    "SetTemperature": "Set a persistent temperature; the hold continues after this action.",
-    "Thermocycle": "Repeat the ordered JSON profile of {celsius, seconds} holds, "
-    "then release temperature control.",
+    "SetTemperature": "Set a persistent temperature; the hold continues after this action. "
+    "Match a heated lid to the block within its heated range; turn lid heating off below it.",
+    "Thermocycle": "Repeat the ordered JSON profile of {celsius, seconds} holds. "
+    "When lidTemperature is omitted, match lid to block within the device's heated lid range, "
+    "with lid heating off below that range. Keep the final temperature settings.",
     "Distribute": "Transfer equal amounts to ordered destinations, reusing one tip. "
     "Air gap is air; a target may split aspirations within its capacity.",
 }

@@ -286,6 +286,10 @@ class STAR:
             f"DECK_JSON = {serialized_deck!r}\n"
             f"SDK_VERSION = {version('pylabrobot')!r}\n\n"
             "async def run(backend, *, confirm=None, thermocycle=None, sleep=asyncio.sleep):\n"
+            '    """The thermal callback matches lid to block when lid_temperature is None;\n'
+            "    Turn lid heating off below the device's heated lid range;\n"
+            "    keep the final temperature settings.\n"
+            '    """\n'
             "    if version('pylabrobot') != SDK_VERSION:\n"
             "        raise RuntimeError(f'This artifact requires pylabrobot=={SDK_VERSION}')\n"
         )
