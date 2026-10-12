@@ -32,34 +32,47 @@ Use `"lab-compiler[opentrons,star]"` to install both SDKs.
 
 ## Write a protocol
 
-Describe biological designs with native pySBOL3 components. An experiment builder records their laboratory operations in a `Protocol`, and `compile()` validates and compiles that protocol for the selected target.
+A `Protocol` records what a scientist would write at the bench: the plates, what starts in each well, and every transfer and mix. This one prepares a two-fold dilution series of fluorescein in PBS, the standard curve for a plate reader.
 
 ```python
-import sbol3
-from lab import compile
+from lab import Protocol, compile, uL
+from lab.deck import Container, Deck, DeckSite
 from lab.equipment import LiquidHandler
-from lab.experiments.cloning import Transformation, build_transformation, transformation_deck
+from lab.labware import PLATE_96
 
-designs = sbol3.Document()
-strain = sbol3.Component("https://example.org/my_strain", sbol3.SBO_FUNCTIONAL_ENTITY)
-chassis = sbol3.Component("https://example.org/my_cells", sbol3.SBO_FUNCTIONAL_ENTITY)
-plasmid = sbol3.Component("https://example.org/my_plasmid", sbol3.SBO_DNA)
-designs.add([strain, chassis, plasmid])
+protocol = Protocol("fluorescein serial dilution")
+sources = protocol.plate("sources", capacity=360 * uL)
+assay = protocol.plate("assay", capacity=360 * uL)
 
-protocol = build_transformation(
-    [Transformation(strain=strain, chassis=chassis, plasmids=[plasmid])],
-    name="transformation",
+fluorescein, pbs, waste = sources["A1"], sources["A2"], sources["A3"]
+protocol.load(fluorescein, "10 µM fluorescein in PBS", volume=150 * uL)
+protocol.load(pbs, "PBS", volume=300 * uL)
+
+dilutions = [assay[f"A{column}"] for column in range(1, 7)]
+protocol.transfer(fluorescein, dilutions[0], volume=100 * uL)
+protocol.distribute(pbs, dilutions[1:], volume=50 * uL)
+
+# Carry 50 µL down the row, mixing each well before the next transfer.
+for previous, current in zip(dilutions, dilutions[1:]):
+    protocol.transfer(previous, current, volume=50 * uL)
+    protocol.mix(current, volume=40 * uL, cycles=3)
+protocol.transfer(dilutions[-1], waste, volume=50 * uL)
+protocol.manual("Read fluorescence at 485 nm excitation and 525 nm emission.")
+
+deck = Deck(
+    containers=(
+        Container(id="sources", labware=PLATE_96, site=DeckSite.PLATES),
+        Container(id="assay", labware=PLATE_96, site=DeckSite.PLATES),
+    )
 )
-compiled = compile(
-    protocol,
-    deck=transformation_deck(on_module=True),
-    liquid_handler=LiquidHandler.OT2,
-)
+compiled = compile(protocol, deck=deck, liquid_handler=LiquidHandler.FLEX)
 ```
+
+`compile()` checks every volume against the wells and the pipette, then writes a printable protocol and an Opentrons Flex program. The deck only says both plates sit in open plate positions; the Flex preset chooses the slots, tip rack, and pipette. Wells A1–A6 of the assay plate each finish with 50 µL.
 
 ## Describe a deck
 
-This OT-2 deck places two 96-well plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/MyersResearchGroup/LabCompiler/blob/master/examples/deck_layouts.py).
+A `DeckLayout` states the equipment and positions instead of leaving them to a preset. This OT-2 deck places the dilution protocol's `sources` and `assay` plates in slots 1 and 2, a 300 µL tip rack in slot 3, and a P300 pipette on the left mount. It uses the same equipment and placement types as the [deck layouts example](https://github.com/MyersResearchGroup/LabCompiler/blob/master/examples/deck_layouts.py).
 
 ```python
 from lab.deck import Deck, DeckLayout, Pipette, Placement, Slot, TipRack
@@ -103,6 +116,12 @@ deck = Deck(
         ),
     ),
 )
+```
+
+Compile the dilution protocol for that robot:
+
+```python
+compiled = compile(protocol, deck=deck, liquid_handler=LiquidHandler.OT2)
 ```
 
 ## Describe physical layouts in Lab
