@@ -39,6 +39,30 @@ jobs:
       - name: Run tests
         run: uv run --no-sync pytest -q
 
+  pudu-equivalence:
+    name: PUDU OT-2 equivalence
+    runs-on: ubuntu-latest
+    env:
+      PUDU_SOURCE: ${{ github.workspace }}/build/pudu-reference/src
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check out the PUDU reference
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: MyersResearchGroup/PUDU
+          ref: dc61f82e4f5c8f9e2ebfa0eae8ea75ef2c7f5cdf # Merged lid-control fix (#22)
+          path: build/pudu-reference
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          python-version: "3.12"
+      - name: Install Opentrons and test dependencies
+        run: uv sync --locked --extra opentrons
+      - name: Compare assembly, transformation, and plating with PUDU
+        run: uv run --no-sync pytest -q tests/test_ot2_equivalence.py
+
   labop:
     name: Optional upstream LabOP integration
     runs-on: ubuntu-latest
@@ -64,7 +88,7 @@ jobs:
 
   build:
     name: Build and check distributions
-    needs: test
+    needs: [test, pudu-equivalence]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

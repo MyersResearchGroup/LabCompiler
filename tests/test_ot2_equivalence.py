@@ -45,7 +45,16 @@ try:
 except ImportError:
     simulate = None
 
-PUDU = Path.home() / "git/MyersResearchGroup/PUDU/src"
+PUDU = (
+    Path(os.environ.get("PUDU_SOURCE", Path.home() / "git/MyersResearchGroup/PUDU/src"))
+    .expanduser()
+    .resolve()
+)
+if "PUDU_SOURCE" in os.environ:
+    if simulate is None:
+        raise pytest.UsageError("PUDU equivalence requires the Opentrons SDK; install .[opentrons]")
+    if not (PUDU / "pudu" / "__init__.py").is_file():
+        raise pytest.UsageError(f"PUDU_SOURCE does not contain the pudu package: {PUDU}")
 requires_robots = pytest.mark.skipif(
     simulate is None or not PUDU.is_dir(),
     reason="Opentrons SDK or PUDU checkout missing",

@@ -178,4 +178,10 @@ uv run --no-sync mypy
 uv run --no-sync pytest
 ```
 
+CI runs the OT-2 equivalence tests against a pinned PUDU revision. To compare against another checkout, set `PUDU_SOURCE` to its `src` directory. When this variable is set, missing PUDU source or the Opentrons SDK fails the run.
+
+```sh
+PUDU_SOURCE=/path/to/PUDU/src uv run --no-sync pytest -q tests/test_ot2_equivalence.py
+```
+
 See the [release guide](https://github.com/MyersResearchGroup/LabCompiler/blob/master/docs/releasing.md) for package validation and PyPI publishing, and the [release notes](https://github.com/MyersResearchGroup/LabCompiler/blob/master/CHANGELOG.md) for changes and migration guidance.
