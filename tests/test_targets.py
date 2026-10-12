@@ -556,6 +556,63 @@ def test_thermal_binding_and_limits():
 
 @pytest.mark.integration
 @requires_opentrons
+@pytest.mark.parametrize("name", ["ot2", "flex"])
+def test_opentrons_lid_follows_each_hold_and_persistent_temperature(name, monkeypatch):
+    lid_settings = []
+    profiles = []
+    shutdowns = []
+    original_lid = ThermocyclerContext.set_lid_temperature
+    original_off = ThermocyclerContext.deactivate_lid
+    original_profile = ThermocyclerContext.execute_profile
+    original_shutdown = ThermocyclerContext.deactivate
+
+    def set_lid(self, temperature):
+        lid_settings.append(temperature)
+        return original_lid(self, temperature)
+
+    def lid_off(self):
+        lid_settings.append(None)
+        return original_off(self)
+
+    def execute_profile(self, steps, repetitions, block_max_volume):
+        profiles.append((steps, repetitions, block_max_volume, lid_settings[-1]))
+        return original_profile(self, steps, repetitions, block_max_volume)
+
+    def shutdown(self):
+        shutdowns.append(True)
+        return original_shutdown(self)
+
+    monkeypatch.setattr(ThermocyclerContext, "set_lid_temperature", set_lid)
+    monkeypatch.setattr(ThermocyclerContext, "deactivate_lid", lid_off)
+    monkeypatch.setattr(ThermocyclerContext, "execute_profile", execute_profile)
+    monkeypatch.setattr(ThermocyclerContext, "deactivate", shutdown)
+    p = Protocol("Lid tracking")
+    p.container("water", capacity=300 * uL)
+    plate = p.plate("aliquots", capacity=100 * uL)
+    p.load(plate["A1"], "water", volume=50 * uL)
+    p.set_temperature(plate, celsius(4))
+    p.thermocycle(plate, [(celsius(42), 1 * seconds), (celsius(16), 2 * seconds)], cycles=2)
+    p.thermocycle(plate, [(celsius(60), 3 * seconds), (celsius(80), 4 * seconds)])
+    p.set_temperature(plate, celsius(37))
+    bundle = compiled(p, target(name, thermal=True))
+    simulate(StringIO(bundle.files["protocol.py"]))
+    assert lid_settings == [None, 42, None, 42, None, 60, 80, 37]
+    assert profiles == [
+        ([{"temperature": temperature, "hold_time_seconds": duration}], 1, 50, lid)
+        for temperature, duration, lid in (
+            (42, 1, 42),
+            (16, 2, None),
+            (42, 1, 42),
+            (16, 2, None),
+            (60, 3, 60),
+            (80, 4, 80),
+        )
+    ]
+    assert not shutdowns
+
+
+@pytest.mark.integration
+@requires_opentrons
 def test_opentrons_deactivates_after_thermal_failure(monkeypatch):
     events = []
     original_deactivate = ThermocyclerContext.deactivate

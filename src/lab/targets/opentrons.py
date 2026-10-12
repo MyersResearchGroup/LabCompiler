@@ -302,6 +302,12 @@ class Opentrons:
                 if not 4 <= step.celsius <= upper:
                     raise step_error(index, step, f"Module temperature range is 4–{upper} °C")
                 setter = "set_block_temperature" if module == "thermocycler" else "set_temperature"
+                if module == "thermocycler":
+                    commands.append(
+                        "thermocycler.deactivate_lid()"
+                        if step.celsius < 37
+                        else f"thermocycler.set_lid_temperature({number(step.celsius)})"
+                    )
                 commands.append(f"{module}.{setter}({number(step.celsius)})")
             elif isinstance(step, Thermocycle):
                 if self.thermocycler is None or self.labware[step.resource].slot != "thermocycler":
@@ -328,20 +334,32 @@ class Opentrons:
                     f"'hold_time_seconds': {number(hold.seconds)}}}"
                     for hold in step.profile
                 )
-                lid = (
-                    "thermocycler.deactivate_lid()"
-                    if step.lid_celsius is None
-                    else f"thermocycler.set_lid_temperature({number(step.lid_celsius)})"
-                )
+                thermal_commands: tuple[str, ...]
+                if step.lid_celsius is None:
+                    thermal_commands = (
+                        f"for _cycle in range({step.cycles}):",
+                        f"    for _hold in [{profile}]:",
+                        "        if _hold['temperature'] < 37:",
+                        "            thermocycler.deactivate_lid()",
+                        "        else:",
+                        "            thermocycler.set_lid_temperature(_hold['temperature'])",
+                        "        thermocycler.execute_profile([_hold], repetitions=1, "
+                        f"block_max_volume={number(maximum_volume)})",
+                    )
+                else:
+                    thermal_commands = (
+                        f"thermocycler.set_lid_temperature({number(step.lid_celsius)})",
+                        f"thermocycler.execute_profile([{profile}], repetitions={step.cycles}, "
+                        f"block_max_volume={number(maximum_volume)})",
+                    )
                 commands.extend(
                     (
                         "thermocycler.close_lid()",
                         "try:",
-                        f"    {lid}",
-                        f"    thermocycler.execute_profile([{profile}], repetitions={step.cycles}, "
-                        f"block_max_volume={number(maximum_volume)})",
-                        "finally:",
+                        *(f"    {command}" for command in thermal_commands),
+                        "except BaseException:",
                         "    thermocycler.deactivate()",
+                        "    raise",
                         "thermocycler.open_lid()",
                     )
                 )

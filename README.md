@@ -152,6 +152,8 @@ The compiler rejects missing layouts, conflicting placements, invalid holder ref
 
 For Opentrons, place thermal labware on a supported `Module`. STAR layouts currently support one independent `Channel` and external thermal integration. Declare thermal containers in `DeckLayout.external_thermal_resources` and supply the async `thermocycle` callback when the generated `run()` executes. The callback is responsible for controlling the device and returning the plate to its original position. Compilation checks the declaration; the software preview only reports the request. On-deck `Module` models are not yet supported by the STAR backend.
 
+By default, thermocycling matches the lid target to each block target within the device's heated lid range and turns lid heating off below that range. On Opentrons, the lid follows block targets at 37 °C and above; colder holds turn off the lid heater. Persistent thermocycler holds use the same rule, including setup and plating. An explicit `lid_temperature` keeps the lid at a fixed target throughout a profile. Successful profiles keep their final temperature settings; a failed Opentrons profile shuts down both controllers. External STAR thermal callbacks follow the same contract when `lid_temperature=None`.
+
 ## Try it
 
 The examples live in the source repository. With [uv](https://docs.astral.sh/uv/) installed, set up Python 3.12 and both optional SDKs:
@@ -193,6 +195,12 @@ uv sync --locked --all-extras --python 3.12
 uv run --no-sync ruff check .
 uv run --no-sync mypy
 uv run --no-sync pytest
+```
+
+CI runs the OT-2 equivalence tests against a pinned PUDU revision. To compare against another checkout, set `PUDU_SOURCE` to its `src` directory. When this variable is set, missing PUDU source or the Opentrons SDK fails the run.
+
+```sh
+PUDU_SOURCE=/path/to/PUDU/src uv run --no-sync pytest -q tests/test_ot2_equivalence.py
 ```
 
 See the [release guide](https://github.com/MyersResearchGroup/LabCompiler/blob/master/docs/releasing.md) for package validation and PyPI publishing, and the [release notes](https://github.com/MyersResearchGroup/LabCompiler/blob/master/CHANGELOG.md) for changes and migration guidance.

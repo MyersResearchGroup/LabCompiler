@@ -45,7 +45,16 @@ try:
 except ImportError:
     simulate = None
 
-PUDU = Path.home() / "git/MyersResearchGroup/PUDU/src"
+PUDU = (
+    Path(os.environ.get("PUDU_SOURCE", Path.home() / "git/MyersResearchGroup/PUDU/src"))
+    .expanduser()
+    .resolve()
+)
+if "PUDU_SOURCE" in os.environ:
+    if simulate is None:
+        raise pytest.UsageError("PUDU equivalence requires the Opentrons SDK; install .[opentrons]")
+    if not (PUDU / "pudu" / "__init__.py").is_file():
+        raise pytest.UsageError(f"PUDU_SOURCE does not contain the pudu package: {PUDU}")
 requires_robots = pytest.mark.skipif(
     simulate is None or not PUDU.is_dir(),
     reason="Opentrons SDK or PUDU checkout missing",
@@ -97,6 +106,17 @@ def _profiles(log: Sequence[Mapping]) -> list[tuple[tuple[tuple[float, float], .
                 seconds = float(step["hold_time_minutes"]) * 60
             steps.append((float(step["temperature"]), seconds))
         found.append((tuple(steps), payload.get("repetitions")))
+    return found
+
+
+def _lid_settings(log: Sequence[Mapping]) -> list[float | None]:
+    found: list[float | None] = []
+    for event in log:
+        text = str(event.get("payload", {}).get("text", ""))
+        if text.startswith("Setting Thermocycler lid temperature to "):
+            found.append(float(text.split(" to ", 1)[1].split(" ", 1)[0]))
+        elif text == "Deactivating Thermocycler lid heating":
+            found.append(None)
     return found
 
 
@@ -192,6 +212,7 @@ def run(protocol: protocol_api.ProtocolContext):
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
     assert _profiles(ours) == _profiles(pudu)
+    assert _lid_settings(ours) == _lid_settings(pudu)
     _assert_product_locations(
         protocol, {uri.removesuffix("/1"): wells for uri, wells in _handoff(pudu).items()}
     )
@@ -243,6 +264,7 @@ def run(protocol: protocol_api.ProtocolContext):
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
     assert _profiles(ours) == _profiles(pudu)
+    assert _lid_settings(ours) == _lid_settings(pudu)
     assert {key: [well.name for well in wells] for key, wells in outputs.items()} == _handoff(pudu)
 
 
@@ -280,12 +302,16 @@ def run(protocol: protocol_api.ProtocolContext):
     engine = HeatShockTransformation(
         transformation_data=strains, plasmid_locations=locations, replicates=2
     )
+    # Exercise thermal control in the simulator instead of PUDU's water-testing shortcut.
+    protocol.is_simulating = lambda: False
     engine.run(protocol)
     protocol.comment('HANDOFF ' + json.dumps(engine.dict_of_parts_in_thermocycler))
 """
     )
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
+    assert _profiles(ours) == _profiles(pudu)
+    assert _lid_settings(ours) == _lid_settings(pudu)
     outputs = protocol.snapshot().output_manifest()
     locations = {placement.sample_id: placement.location for placement in outputs.placements}
     assert {
@@ -329,12 +355,16 @@ def run(protocol: protocol_api.ProtocolContext):
         tube_volume_competent_cell={int(magnitude(CELL_ALIQUOT, "microliter"))},
         tiprack_p200_labware={tiprack!r},
     )
+    # Exercise thermal control in the simulator instead of PUDU's water-testing shortcut.
+    protocol.is_simulating = lambda: False
     engine.run(protocol)
     protocol.comment('HANDOFF ' + json.dumps(engine.dict_of_parts_in_thermocycler))
 """
     )
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
+    assert _profiles(ours) == _profiles(pudu)
+    assert _lid_settings(ours) == _lid_settings(pudu)
     outputs = protocol.snapshot().output_manifest()
     locations = {placement.sample_id: placement.location for placement in outputs.placements}
     assert {
@@ -374,3 +404,4 @@ def run(protocol: protocol_api.ProtocolContext):
     )
     pudu = _log(source, tmp_path)
     assert _transfers(ours) == _transfers(pudu)
+    assert _lid_settings(ours) == _lid_settings(pudu) == [None]
