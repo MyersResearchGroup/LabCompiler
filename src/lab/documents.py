@@ -3,6 +3,7 @@
 from html import escape
 from typing import Any
 
+from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
     Distribute,
     ManualInstruction,
@@ -17,15 +18,25 @@ from lab.units import number
 
 
 def describe(step: Step) -> str:
+    liquid = ""
+    if isinstance(step, (Transfer, Distribute, Mix)):
+        if isinstance(step.liquid_class, LiquidClass):
+            spec = step.liquid_class
+            liquid = (
+                f" Liquid class {spec.name}: aspirate {number(spec.aspiration_flow_rate_ul_s)} "
+                f"µL/s; dispense {number(spec.dispense_flow_rate_ul_s)} µL/s."
+            )
+        elif isinstance(step.liquid_class, HamiltonLiquidClass):
+            liquid = f" Hamilton STAR liquid class {step.liquid_class.name}."
     match step:
         case Transfer(source, destination, volume, _):
-            return f"Transfer {number(volume)} µL from {source} to {destination}."
+            return f"Transfer {number(volume)} µL from {source} to {destination}.{liquid}"
         case Distribute(source, destinations, volume, air_gap, _):
             wells = ", ".join(str(destination) for destination in destinations)
             gap = f" Air gap {number(air_gap)} µL." if air_gap is not None else ""
-            return f"Distribute {number(volume)} µL from {source} to {wells}.{gap}"
+            return f"Distribute {number(volume)} µL from {source} to {wells}.{gap}{liquid}"
         case Mix(location, volume, cycles, _):
-            return f"Mix {location}: {cycles} cycles of {number(volume)} µL."
+            return f"Mix {location}: {cycles} cycles of {number(volume)} µL.{liquid}"
         case Wait(seconds, _):
             unit = "second" if seconds == 1 else "seconds"
             return f"Wait {number(seconds)} {unit}."

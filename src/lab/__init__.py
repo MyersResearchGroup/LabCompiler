@@ -2,6 +2,7 @@
 
 from lab._version import __version__
 from lab.compiler import Compilation, compile
+from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.protocol import Plate, Protocol, Well
 from lab.units import Quantity, celsius, minutes, mL, seconds, uL
 from lab.validation import CompileError
@@ -9,6 +10,8 @@ from lab.validation import CompileError
 __all__ = [
     "Compilation",
     "CompileError",
+    "HamiltonLiquidClass",
+    "LiquidClass",
     "Plate",
     "Protocol",
     "Quantity",

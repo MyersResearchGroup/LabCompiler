@@ -1,0 +1,155 @@
+# Illustrative preparation inputs, NOT recovered or validated LMSF method settings.
+# Use with the July fitness CSV. The deck tables below declare development
+# equipment, capacities, tips, positions, and channel limits.
+# ProtocolConfig mirrors these tables and fields. Quantities include units;
+# liquid_class values name entries in the liquid_classes table below.
+wells = ["A1", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"]
+final_volume = "200 uL"             # includes inoculum and every stock addition
+inoculum_volume = "10 uL"
+vehicle_fraction = "0.02"           # DMSO v/v; balancing source is pure DMSO
+source_dead_volume = "20 uL"
+# This recipe handles independent single-solute stocks, not premixes or passage.
+# Assert known absence of every CSV solute and DMSO from medium AND all cultures.
+solute_and_vehicle_free_medium_and_cultures = true
+
+# Portable classes specify these two rates only. Other robot settings and
+# calibration retain SDK defaults; the numbers below need instrument validation.
+[liquid_classes.aqueous]
+kind = "portable"
+aspiration_flow_rate = "20 uL/s"
+dispense_flow_rate = "30 uL/s"
+
+[liquid_classes.dmso]
+kind = "portable"
+aspiration_flow_rate = "5 uL/s"
+dispense_flow_rate = "10 uL/s"
+
+[liquid_classes.culture]
+kind = "portable"
+aspiration_flow_rate = "20 uL/s"
+dispense_flow_rate = "20 uL/s"
+
+# To use an installed PyLabRobot STAR built-in, replace a class table with:
+# [liquid_classes.aqueous]
+# kind = "hamilton"
+# name = "<exact symbol from the STAR catalogue>"
+# Match liquid, tip, volume range, and dispensing mode; OT-2 rejects native classes.
+
+[medium]
+name = "Base medium (development input)"
+well = "A1"                        # reservoir A1; all other sources are on reagents
+volume = "3000 uL"
+dead_volume = "500 uL"
+liquid_class = "aqueous"
+
+[vehicle]
+name = "DMSO"
+well = "A5"
+volume = "100 uL"
+liquid_class = "dmso"
+
+[source_mix]
+volume = "50 uL"
+cycles = 3
+liquid_class = "culture"
+
+[destination_mix]
+volume = "100 uL"
+cycles = 3
+liquid_class = "culture"
+
+# Stocks are supplied already prepared. Select the smallest max_target covering
+# the requested concentration. Bounds use final concentration, not stock dose.
+# Each stock supplies only its named solute; vehicle_fraction is DMSO v/v.
+[[stocks]]
+solute = "Van"
+well = "A1"
+volume = "300 uL"
+concentration = "100 umol/L"
+max_target = "25 umol/L"
+vehicle_fraction = "0"
+liquid_class = "aqueous"
+
+[[stocks]]
+solute = "Van"
+well = "A2"
+volume = "200 uL"
+concentration = "1000 umol/L"
+max_target = "200 umol/L"
+vehicle_fraction = "0"
+liquid_class = "aqueous"
+
+[[stocks]]
+solute = "Sal"
+well = "A3"
+volume = "300 uL"
+concentration = "100 umol/L"
+max_target = "100 umol/L"
+vehicle_fraction = "0"
+liquid_class = "aqueous"
+
+[[stocks]]
+solute = "TMP"
+well = "A4"
+volume = "100 uL"
+concentration = "300 ug/mL"
+max_target = "3 ug/mL"
+vehicle_fraction = "1"
+liquid_class = "dmso"
+
+[[cultures]]
+strain = "Mar-Clo"
+plasmid = "pDRAC18-2-A"
+well = "B1"
+volume = "300 uL"
+liquid_class = "culture"
+
+# Pydantic parses these tables into the existing lab.deck.Deck dataclasses.
+# Adapt models and locations to installed equipment before physical use.
+[[deck.containers]]
+id = "reagents"
+labware = { kind = "plate", rows = 8, columns = 12, capacity_ul = "360" }
+
+[[deck.containers]]
+id = "cultures"
+labware = { kind = "plate", rows = 8, columns = 12, capacity_ul = "360" }
+
+[[deck.containers]]
+id = "medium"
+labware = { kind = "reservoir", rows = 1, columns = 1, capacity_ul = "15000" }
+
+[[deck.layouts]]
+liquid_handler = "ot2"
+placements = [
+  { container = "reagents", model = "corning_96_360_ul", location = { name = "1" } },
+  { container = "cultures", model = "corning_96_360_ul", location = { name = "2" } },
+  { container = "medium", model = "nest_12_reservoir_15_ml", location = { name = "3" }, wells = ["A1"] },
+]
+tip_racks = [
+  { id = "p300_tips", model = "opentrons_300_ul", location = { name = "5" } },
+  { id = "p20_tips", model = "opentrons_20_ul", location = { name = "6" } },
+]
+pipettes = [
+  { model = "p300_single_gen2", mount = "left", tip_racks = ["p300_tips"] },
+  { model = "p20_single_gen2", mount = "right", tip_racks = ["p20_tips"] },
+]
+
+[[deck.layouts]]
+liquid_handler = "star"
+placements = [
+  { container = "reagents", model = "corning_96_360_ul", location = { holder = "plates", index = 0 } },
+  { container = "cultures", model = "corning_96_360_ul", location = { holder = "plates", index = 1 } },
+  { container = "medium", model = "nest_12_reservoir_15_ml", location = { holder = "plates", index = 2 }, wells = ["A1"] },
+]
+carriers = [
+  { id = "plates", model = "hamilton_plate_5", location = { index = 15 } },
+  { id = "tips", model = "hamilton_tip_5", location = { index = 3 } },
+]
+tip_racks = [
+  { id = "star_tips", model = "hamilton_300_ul", location = { holder = "tips", index = 0 } },
+]
+# One channel and 300 uL tips. The 1 uL minimum is a software demonstration
+# limit, not a validated physical operating range.
+channels = [
+  { index = 0, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips"] },
+]

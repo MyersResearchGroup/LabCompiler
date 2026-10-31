@@ -1,10 +1,11 @@
 """The entire recorded protocol vocabulary. No callbacks or device objects."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from typing import Any
 
+from lab.liquid_classes import HamiltonLiquidClass, LiquidClass, LiquidClassSpec
 from lab.samples import Location, OutputManifest, Sample, SamplePlacement
 from lab.units import number
 
@@ -46,6 +47,7 @@ class Transfer:
     destination: Location
     volume: Decimal
     origin: Origin
+    liquid_class: LiquidClassSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,7 @@ class Distribute:
     volume: Decimal
     air_gap: Decimal | None
     origin: Origin
+    liquid_class: LiquidClassSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,7 @@ class Mix:
     volume: Decimal
     cycles: int
     origin: Origin
+    liquid_class: LiquidClassSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -159,9 +163,23 @@ def encode(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: encode(item) for key, item in value.items()}
     if isinstance(
-        value, (Transfer, Distribute, Mix, Wait, Thermocycle, SetTemperature, ManualInstruction)
+        value,
+        (
+            Transfer,
+            Distribute,
+            Mix,
+            Wait,
+            Thermocycle,
+            SetTemperature,
+            ManualInstruction,
+            LiquidClass,
+            HamiltonLiquidClass,
+        ),
     ):
-        return {"kind": type(value).__name__, **encode(asdict(value))}
+        return {
+            "kind": type(value).__name__,
+            **{name: encode(getattr(value, name)) for name in value.__dataclass_fields__},
+        }
     if hasattr(value, "__dataclass_fields__"):
         # Do not recursively use asdict here: it would erase step discriminants.
         return {name: encode(getattr(value, name)) for name in value.__dataclass_fields__}

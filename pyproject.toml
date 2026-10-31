@@ -32,11 +32,13 @@ Repository = "https://github.com/MyersResearchGroup/LabCompiler"
 Issues = "https://github.com/MyersResearchGroup/LabCompiler/issues"
 
 [project.optional-dependencies]
+config = ["pydantic>=2.13,<3"]
 opentrons = ["opentrons==8.8.2"]
 star = ["pylabrobot==0.2.1"]
 
 [dependency-groups]
 dev = [
+    "pydantic>=2.13,<3",
     "pytest>=8,<10",
     "pytest-asyncio>=1,<2",
     "ruff>=0.12,<1",
@@ -87,7 +89,7 @@ asyncio_mode = "auto"
 markers = ["integration: requires the optional robot SDKs; never connects to hardware"]
 
 [tool.mypy]
-files = ["src/lab", "integrations/labop"]
+files = ["src/lab", "integrations/labop", "examples/concentration_series"]
 check_untyped_defs = true
 disallow_untyped_defs = true
 
