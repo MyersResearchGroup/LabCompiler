@@ -198,7 +198,7 @@ uv run --no-sync python -m examples.concentration_series \
   --config examples/concentration_series/config.toml --target manual
 ```
 
-Use `--target ot2` or `--target star` with the corresponding optional SDK installed; `--out` selects the bundle directory. The example ends with an inoculated plate; incubation and measurement need separately specified methods.
+Use `--target ot2` or `--target star` with the corresponding optional SDK installed. Output goes to `build/concentration_series/csv/<target>/`; `--out` selects another directory. Rerunning replaces the generated bundle in that directory. The example ends with an inoculated plate; incubation and measurement need separately specified methods.
 
 `LiquidClass` supplies unit-checked aspiration and dispense rates on either robot family. `HamiltonLiquidClass` references a native STAR built-in, whose definition is captured during compilation. Both can be passed as `liquid_class=` to `transfer()`, `distribute()`, and `mix()`. See [liquid classes](docs/liquid-classes.md) for examples, settings coverage, calibration boundaries, and the data needed to compare with VENUS.
 

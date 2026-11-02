@@ -438,13 +438,18 @@ def test_protocol_consumes_prepared_inputs_without_parsing_or_recalculating(monk
     )
 
 
-def test_cli_config_and_csv_provenance_match_the_prepared_inputs(tmp_path, monkeypatch):
-    output = tmp_path / "compiled"
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["concentration_series", "--csv", str(CSV), "--config", str(CONFIG), "--out", str(output)],
-    )
+@pytest.mark.parametrize("explicit_output", [False, True])
+def test_cli_replaces_existing_bundle_with_current_inputs(tmp_path, monkeypatch, explicit_output):
+    monkeypatch.chdir(tmp_path)
+    output = tmp_path / ("compiled" if explicit_output else "build/concentration_series/csv/manual")
+    output.mkdir(parents=True)
+    for name in ("plan.json", "protocol.html", "manifest.json", "protocol.py"):
+        (output / name).write_text("Previous compilation")
+    (output / "notes.txt").write_text("Keep these notes")
+    argv = ["concentration_series", "--csv", str(CSV), "--config", str(CONFIG)]
+    if explicit_output:
+        argv.extend(["--out", str(output)])
+    monkeypatch.setattr(sys, "argv", argv)
     cli.main()
     plan = json.loads((output / "plan.json").read_text())
     description = plan["protocol"]["description"]
@@ -454,6 +459,10 @@ def test_cli_config_and_csv_provenance_match_the_prepared_inputs(tmp_path, monke
         description.split("Protocol configuration: ", 1)[1]
     ) == configuration().model_dump(mode="json")
     assert len(plan["protocol"]["steps"]) == 71
+    assert "Previous compilation" not in (output / "protocol.html").read_text()
+    assert len(json.loads((output / "manifest.json").read_text())["outputs"]) == 9
+    assert not (output / "protocol.py").exists()
+    assert (output / "notes.txt").read_text() == "Keep these notes"
 
 
 @pytest.mark.parametrize(

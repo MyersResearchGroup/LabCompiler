@@ -51,9 +51,9 @@ def main() -> None:
             p,
             deck=config.deck if handler else None,
             liquid_handler=handler,
-            to=None,
+            to=args.out or f"build/concentration_series/csv/{args.target}",
         )
-        print(bundle.write(args.out or f"build/concentration_series/csv/{args.target}"))
+        print(bundle.directory)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.error(str(exc))
 
