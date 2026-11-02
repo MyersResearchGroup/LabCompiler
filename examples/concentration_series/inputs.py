@@ -67,7 +67,7 @@ class CultureConfig(SourceConfig):
 class ProtocolConfig(ConfigModel):
     """The preparation TOML schema; target concentrations apply after inoculation."""
 
-    wells: Annotated[tuple[WellName, ...], Field(min_length=1)]
+    wells: Annotated[tuple[WellName, ...], Field(min_length=1)] | None = None
     final_volume: Volume
     inoculum_volume: Volume
     vehicle_fraction: VolumeFraction
@@ -94,8 +94,8 @@ class ProtocolConfig(ConfigModel):
 
     @field_validator("wells")
     @classmethod
-    def distinct_wells(cls, wells: tuple[str, ...]) -> tuple[str, ...]:
-        if len(set(wells)) != len(wells):
+    def distinct_wells(cls, wells: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if wells is not None and len(set(wells)) != len(wells):
             raise ValueError("Select wells without repeats")
         return wells
 
@@ -195,11 +195,12 @@ class PreparedWell:
 def prepare_wells(layout: PlateLayout, config: ProtocolConfig) -> list[PreparedWell]:
     """Check the two inputs together and calculate each well's additions once."""
     conditions = {condition.well: condition for condition in layout.conditions}
-    if missing := set(config.wells) - conditions.keys():
+    selected_wells = config.wells if config.wells is not None else tuple(conditions)
+    if missing := set(selected_wells) - conditions.keys():
         raise ValueError(f"Selected wells absent from CSV: {sorted(missing)}")
     cultures = {(culture.strain, culture.plasmid): culture for culture in config.cultures}
     prepared_wells = []
-    for well in config.wells:
+    for well in selected_wells:
         condition = conditions[well]
         culture = cultures.get((condition.strain, condition.plasmid))
         if culture is None:

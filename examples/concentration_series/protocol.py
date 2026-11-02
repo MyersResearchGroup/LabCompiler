@@ -31,8 +31,10 @@ def protocol(prepared_wells: Sequence[PreparedWell], config: ProtocolConfig) -> 
         f"Protocol configuration: {config.model_dump_json(indent=2)}",
     )
 
-    # Declare the source plate for prepared stocks, vehicle, and inocula.
-    reagents = p.plate("reagents", capacity=360 * uL, dead_volume=config.source_dead_volume)
+    # Hold prepared stocks, vehicle, and inocula in separate reservoir channels.
+    reagents = p.plate(
+        "reagents", shape=(1, 12), capacity=15000 * uL, dead_volume=config.source_dead_volume
+    )
 
     # Declare the culture plate; each selected well holds one experimental condition.
     destinations = p.plate("cultures", capacity=360 * uL)

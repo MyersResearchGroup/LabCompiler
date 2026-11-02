@@ -1,7 +1,8 @@
-"""Prepare selected LMSF fitness CSV wells using explicit configuration.
+"""Prepare an LMSF fitness CSV layout using explicit configuration.
 
 Run with --csv and --config (see config.toml). Stocks are supplied already
-prepared. The example ends with an inoculated culture plate.
+prepared. Every CSV row is prepared unless config.wells selects a subset.
+The example ends with an inoculated culture plate.
 """
 
 import argparse

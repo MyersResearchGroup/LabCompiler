@@ -69,60 +69,57 @@ def test_preparation_matches_independent_doses_inventory_and_identity():
     bundle = compile(protocol(), to=None)
     transfers = delivered_transfers(bundle.protocol.steps)
 
-    # Expected Van dose in uL; fixed additions are 20 Sal + 2 TMP + 2 DMSO + 10 culture.
-    expected = {
-        "A1": (None, "0"),
-        "A5": ("A1", "1.5625"),
-        "A6": ("A1", "3.125"),
-        "A7": ("A1", "6.25"),
-        "A8": ("A1", "12.5"),
-        "A9": ("A1", "25"),
-        "A10": ("A1", "50"),
-        "A11": ("A2", "10"),
-        "A12": ("A2", "20"),
-    }
-    targets = {
-        row.well: (row.inducer1_concentration * row.inducer1_units).to("umol/liter").magnitude
-        for row in layout().conditions
-    }
-    for well, (stock, dose) in expected.items():
-        moves = [s for s in transfers if s.destination == Location("cultures", well)]
-        sources = [Location("medium", "A1"), Location("reagents", "A5")]
-        volumes = [Decimal(166) - Decimal(dose), Decimal(2)]
-        if stock is not None:
-            sources.append(Location("reagents", stock))
-            volumes.append(Decimal(dose))
-            stock_um = 100 if stock == "A1" else 1000
-            assert Decimal(dose) * stock_um / 200 == targets[well]
-        sources.extend(Location("reagents", source) for source in ("A3", "A4", "B1"))
-        volumes.extend((Decimal(20), Decimal(2), Decimal(10)))
-        assert [s.source for s in moves] == sources
-        assert [s.volume for s in moves] == volumes
+    conditions = layout().conditions
+    expected = {f"{row}{column}" for row in "ABCDEFGH" for column in range(1, 13)}
+    assert {row.well for row in conditions} == expected
+    assert configuration().wells is None
+    samples = {sample.id: sample for sample in bundle.manifest.samples}
+    for row in conditions:
+        moves = [s for s in transfers if s.destination == Location("cultures", row.well)]
+
+        # Independently balance all CSV targets against the supplied working stocks.
+        van_stock = "A1" if row.inducer1_concentration <= 25 else "A2"
+        van = row.inducer1_concentration * 200 / (100 if van_stock == "A1" else 1000)
+        sal = row.inducer2_concentration * 200 / 100
+        tmp = row.selector_concentration * 200 / 300
+        culture_source = f"A{6 + (ord(row.row) - ord('A')) // 2}"
+        doses = {
+            Location("medium", "A1"): Decimal(186) - van - sal,
+            Location("reagents", "A5"): Decimal(4) - tmp,
+            Location("reagents", van_stock): van,
+            Location("reagents", "A3"): sal,
+            Location("reagents", "A4"): tmp,
+            Location("reagents", culture_source): Decimal(10),
+        }
+        assert {s.source: s.volume for s in moves} == {
+            source: dose for source, dose in doses.items() if dose
+        }
         assert sum(s.volume for s in moves) == 200
-        assert (volumes[1] + Decimal(2)) / 200 == Decimal("0.02")
+        assert (doses[Location("reagents", "A5")] + tmp) / 200 == Decimal("0.02")
+        sample = samples[f"culture-{row.well}"]
+        assert sample.material_identity == row.plasmid
+        assert sample.parent_ids == (f"inoculum-{culture_source}",)
+        assert sample.replicate is None
 
     remaining = dict(bundle.final_volumes)
     assert {well: remaining[Location("cultures", well)] for well in expected} == dict.fromkeys(
         expected, Decimal(200)
     )
     for well, volume in (
-        ("A1", "201.5625"),
-        ("A2", "170"),
-        ("A3", "120"),
-        ("A4", "82"),
-        ("A5", "82"),
-        ("B1", "210"),
+        ("A1", "596.25"),
+        ("A2", "680"),
+        ("A3", "820"),
+        ("A4", "832"),
+        ("A5", "784"),
+        ("A6", "760"),
+        ("A7", "760"),
+        ("A8", "760"),
+        ("A9", "760"),
     ):
-        assert remaining[Location("reagents", well)] == Decimal(volume)
-    assert remaining[Location("medium", "A1")] == Decimal("1634.4375")
-    assert len(bundle.manifest.samples) == 9
+        assert abs(remaining[Location("reagents", well)] - Decimal(volume)) < Decimal("1e-12")
+    assert abs(remaining[Location("medium", "A1")] - Decimal("547.75")) < Decimal("1e-12")
+    assert len(bundle.manifest.samples) == 96
     assert {p.location.well for p in bundle.manifest.placements} == set(expected)
-    assert all(
-        s.material_identity == "example-plasmid-1"
-        and s.parent_ids == ("inoculum-B1",)
-        and s.replicate is None
-        for s in bundle.manifest.samples
-    )
     assert '"name": "DMSO"' in bundle.protocol.description
     assert "DMSO" in bundle.files["protocol.html"]
     assert all(s.liquid_class is not None for s in bundle.protocol.steps)
@@ -130,31 +127,30 @@ def test_preparation_matches_independent_doses_inventory_and_identity():
     mixes = [s for s in bundle.protocol.steps if isinstance(s, Mix)]
     assert [(s.location, s.volume, s.cycles) for s in mixes] == [
         item
-        for well in expected
-        for item in ((Location("reagents", "B1"), 50, 3), (Location("cultures", well), 100, 3))
+        for row in conditions
+        for item in (
+            (Location("reagents", f"A{6 + (ord(row.row) - ord('A')) // 2}"), 50, 3),
+            (Location("cultures", row.well), 100, 3),
+        )
     ]
 
 
 def test_additions_are_grouped_by_source_and_dose_before_inoculation():
     steps = protocol().steps
-    assert len(steps) == 47
+    assert len(steps) == 327
     assert all(
-        isinstance(step, Transfer) and step.source.resource == "medium" for step in steps[:9]
+        isinstance(step, Distribute) and step.source.resource == "medium" for step in steps[:20]
     )
     distributions = [step for step in steps if isinstance(step, Distribute)]
-    assert [(step.source.well, step.volume) for step in distributions] == [
-        ("A5", 2),
-        ("A3", 20),
-        ("A4", 2),
-    ]
-    assert all(
-        tuple(well.well for well in step.destinations) == configuration().wells
-        for step in distributions
-    )
+    assert len(distributions) == 39
+    assert len({(step.source, step.volume) for step in distributions}) == len(distributions)
+    assert {destination.well for step in steps[:20] for destination in step.destinations} == {
+        row.well for row in layout().conditions
+    }
     first_inoculum_mix = next(index for index, step in enumerate(steps) if isinstance(step, Mix))
-    assert first_inoculum_mix == 20
+    assert first_inoculum_mix == 39
     assert all(
-        step.source.resource == "medium" or step.source.well != "B1"
+        step.source.resource == "medium" or step.source.well in {"A1", "A2", "A3", "A4", "A5"}
         for step in steps[:first_inoculum_mix]
     )
 
@@ -202,7 +198,7 @@ def test_generated_ot2_actions_match_transfers_mixes_and_tips(tmp_path, monkeypa
         volume = re.search(r"volume of ([0-9.]+)", actual)
         assert volume and Decimal(volume[1]) == expected_mix.volume
     tips = len(bundle.protocol.steps)
-    assert tips == 47
+    assert tips == 327
     assert sum(t.startswith("Picking up tip") for t in texts) == tips
     assert sum(t.startswith("Dropping tip") for t in texts) == tips
 
@@ -217,7 +213,7 @@ def test_generated_ot2_actions_match_transfers_mixes_and_tips(tmp_path, monkeypa
         (
             lambda s: updated(
                 s,
-                cultures=(updated(s.cultures[0], volume=25 * uL),),
+                cultures=(updated(s.cultures[0], volume=25 * uL), *s.cultures[1:]),
             ),
             "available above its dead volume",
         ),
@@ -238,7 +234,7 @@ def test_preparation_rejects_infeasible_or_unknown_inputs(change, message):
             "solute_and_vehicle_free_medium_and_cultures = false",
             "carryover",
         ),
-        ('source_dead_volume = "20 uL"', 'source_dead_volume = "-1 uL"', "nonnegative"),
+        ('source_dead_volume = "500 uL"', 'source_dead_volume = "-1 uL"', "nonnegative"),
         ('vehicle_fraction = "0.02"', 'vehicle_fraction = "NaN"', "finite"),
         ('inoculum_volume = "10 uL"', 'inoculum_volume = "200 uL"', "less than"),
         ('liquid_class = "aqueous"', 'liquid_class = "missing"', "missing"),
@@ -321,14 +317,29 @@ async def test_generated_star_example_tracks_all_delivered_volumes():
         plr.set_volume_tracking(False)
     for location, volume in bundle.final_volumes:
         resource = handler.deck.get_resource(location.resource).get_item(location.well)
-        assert Decimal(str(resource.tracker.get_used_volume())) == volume
+
+        # The SDK accumulates binary floats, while the compiler retains decimal doses.
+        assert abs(Decimal(str(resource.tracker.get_used_volume())) - volume) < Decimal("1e-8")
+
+
+def test_explicit_subset_preserves_requested_order_and_culture_assignments():
+    config = updated(configuration(), wells=("H12", "A1"))
+    prepared = inputs.prepare_wells(layout(), config)
+    assert [well.well for well in prepared] == ["H12", "A1"]
+    assert [well.culture.plasmid for well in prepared] == [
+        "example-plasmid-4",
+        "example-plasmid-1",
+    ]
+    bundle = compile(recipe.protocol(prepared, config), to=None)
+    assert {placement.location.well for placement in bundle.manifest.placements} == {"H12", "A1"}
 
 
 def test_config_round_trip_preserves_toml_shape_and_resolves_classes_explicitly():
     raw = tomllib.loads(CONFIG.read_text())
     config = inputs.ProtocolConfig.model_validate(raw)
     saved = config.model_dump(mode="json")
-    assert saved.keys() == raw.keys()
+    assert saved.keys() == raw.keys() | {"wells"}
+    assert saved["wells"] is None
     for field in ("medium", "vehicle", "source_mix", "destination_mix"):
         assert saved[field].keys() == raw[field].keys()
     for field in ("stocks", "cultures"):
@@ -425,7 +436,8 @@ def test_saved_config_is_the_validated_input_used_by_the_recipe():
     assert recorded["final_volume"] == "180 microliter"
     assert recorded["medium"]["name"] == "Specified medium"
     assert all(
-        dict(bundle.final_volumes)[Location("cultures", well)] == 180 for well in config.wells
+        dict(bundle.final_volumes)[Location("cultures", row.well)] == 180
+        for row in layout().conditions
     )
     with pytest.raises(ValidationError, match="less than final"):
         updated(config, inoculum_volume=200 * uL)
@@ -474,7 +486,8 @@ def test_protocol_consumes_prepared_inputs_without_parsing_or_recalculating(monk
         p = recipe.protocol(prepared, config)
     bundle = compile(p, to=None)
     assert all(
-        dict(bundle.final_volumes)[Location("cultures", well)] == 200 for well in config.wells
+        dict(bundle.final_volumes)[Location("cultures", row.well)] == 200
+        for row in layout().conditions
     )
 
 
@@ -498,9 +511,9 @@ def test_cli_replaces_existing_bundle_with_current_inputs(tmp_path, monkeypatch,
     assert json.loads(
         description.split("Protocol configuration: ", 1)[1]
     ) == configuration().model_dump(mode="json")
-    assert len(plan["protocol"]["steps"]) == 47
+    assert len(plan["protocol"]["steps"]) == 327
     assert "Previous compilation" not in (output / "protocol.html").read_text()
-    assert len(json.loads((output / "manifest.json").read_text())["outputs"]) == 9
+    assert len(json.loads((output / "manifest.json").read_text())["outputs"]) == 96
     assert not (output / "protocol.py").exists()
     assert (output / "notes.txt").read_text() == "Keep these notes"
 
@@ -512,7 +525,11 @@ def test_cli_replaces_existing_bundle_with_current_inputs(tmp_path, monkeypatch,
         (None, ("inducer1Units", "unknownColumn"), "CSV schema"),
         (None, ("A5,A,5", "A5,A,6"), "Inconsistent position"),
         (None, ("example-plasmid-1", "unknown-plasmid"), "no source"),
-        (('"A1", "A5"', '"A1", "A13"'), None, "wells.1"),
+        (
+            ('final_volume = "200 uL"', 'wells = ["A1", "A13"]\nfinal_volume = "200 uL"'),
+            None,
+            "wells.1",
+        ),
         (('solute = "Van"', 'solute = "unknown"'), None, "no stock"),
         (('vehicle_fraction = "0.02"', 'vehicle_fraction = "0.005"'), None, "exceed"),
         (('name = "2"', 'name = "1"'), None, "occupied more than once"),
