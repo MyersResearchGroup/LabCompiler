@@ -8,10 +8,18 @@ from jinja2 import Environment, PackageLoader, StrictUndefined
 
 import lab.compiler as compiler
 from lab.documents.prepare import build_worksheet
+from lab.model import encode
 from lab.units import number
 
-STYLESHEETS = ("worksheet.css", "inspector.css", "flow-profile.css", "responsive.css", "print.css")
-SCRIPTS = ("flow-profile.js", "inspector.js")
+STYLESHEETS = (
+    "worksheet.css",
+    "inspector.css",
+    "flow-profile.css",
+    "preparation.css",
+    "responsive.css",
+    "print.css",
+)
+SCRIPTS = ("flow-profile.js", "transfer-motion.js", "preparation.js", "inspector.js")
 
 environment = Environment(
     loader=PackageLoader("lab.documents", "templates"),
@@ -22,7 +30,10 @@ environment = Environment(
     keep_trailing_newline=True,
 )
 environment.filters.update(
-    number=number, coordinate=lambda value: f"{value:.2f}", short_time=lambda value: f"{value:.3g}"
+    number=number,
+    coordinate=lambda value: f"{value:.2f}",
+    short_time=lambda value: f"{value:.3g}",
+    encode=encode,
 )
 
 

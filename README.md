@@ -190,9 +190,13 @@ The HTML worksheet shows initial loads, numbered operations, liquid-class settin
 
 The [worksheet UI guide](docs/worksheet-ui.md) describes its typed view data, reusable templates, and interactive components.
 
+The preparation preview shows logical plate layouts and reagent inputs. Step through or play the procedure to see source volumes decrease and destination wells fill; a schematic pipette and directional paths show each transfer. Distributions visit each destination, and mixes animate in place. Click a procedure step number to preview that state. Well details and reagent amounts follow the selected step. The preview uses the compiler's volume accounting, with animation timing chosen for readability. It shows planned liquid movement; physical well bindings are available in the detail cards.
+
 Liquid-class cards plot flow rate against time for the selected operation. Aspiration is positive and dispensing negative; mixing repeats those phases. Durations are ideal calculations from nominal volume divided by the recorded rate, excluding robot movement, pauses, ramps, air gaps, and volume correction. These diagrams are not measured device traces. Native Hamilton profiles require rates captured during STAR compilation.
 
 ## Concentration series
+
+Preparation proceeds across the plate: medium first, then vehicle and each stock, followed by inoculation and mixing. Equal doses from the same source share a `distribute()` operation and one tip. Unique doses remain individual transfers. With the supplied configuration this requires 47 tips, including the existing source-resuspension and destination-mixing operations. The worksheet reports the tip count alongside the operation count.
 
 The standalone [concentration-series example](examples/concentration_series/) reads a [plate layout](examples/concentration_series/layout.csv) and [protocol configuration](examples/concentration_series/config.toml), then records ordinary transfers and mixes. The supplied layout preserves the well coordinates and target concentrations of an LMSF fitness export, with generic strain and plasmid names. The configuration selects nine conditions for `example-plasmid-1`. `lab.units.dilution_volume()` calculates stock volumes; the recipe balances vehicle and medium, inoculates, and mixes. Source identities and volumes, working-stock selection, and liquid classes are explicit. The TOML also declares development OT-2 and STAR deck layouts, parsed directly into Lab's existing `Deck` types.
 

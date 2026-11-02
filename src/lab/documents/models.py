@@ -77,12 +77,60 @@ class LiquidClassView:
 
 
 @dataclass(frozen=True)
+class WellVolume:
+    anchor: str
+    volume: Decimal
+    radius: Decimal
+
+
+@dataclass(frozen=True)
+class PlateWellView:
+    coordinate: str
+    row: int
+    column: int
+    x: int
+    y: int
+    reference: Reference | None
+    initial: WellVolume | None
+
+
+@dataclass(frozen=True)
+class PlateMapView:
+    resource: ResourceView
+    rows: tuple[str, ...]
+    columns: tuple[int, ...]
+    wells: tuple[PlateWellView, ...]
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
+class PreparationFrame:
+    number: int
+    description: str
+    source: str | None
+    destinations: tuple[str, ...]
+    active: tuple[str, ...]
+    volumes: tuple[WellVolume, ...]
+    mix_cycles: int = 0
+    refill_between_destinations: bool = False
+
+
+@dataclass(frozen=True)
+class PreparationView:
+    plates: tuple[PlateMapView, ...]
+    frames: tuple[PreparationFrame, ...]
+
+
+@dataclass(frozen=True)
 class Worksheet:
     protocol: RecordedProtocol
     target: TargetPlan
     digest: str
+    tip_count: int
     summary: str
     notes: str
     resources: tuple[ResourceView, ...]
     procedure: tuple[ProcedureRow, ...]
     liquid_classes: tuple[LiquidClassView, ...]
+    preparation: PreparationView

@@ -18,6 +18,10 @@
 {% macro location_card(well) -%}
 {% call card(well.reference, "Location") %}
   <h4>Initial contents</h4><p>{{ well.fill.material if well.fill else "Initially empty" }}</p>
+  <lab-well-volume class="well-preview-volume" data-location="{{ well.reference.anchor }}">
+    <span data-volume-context>Initial loads</span>
+    <strong><span data-volume-value>{{ well.fill.volume|number if well.fill else "0" }}</span> µL</strong>
+  </lab-well-volume>
   {{ fields(well.fields) }}
   {% if well.sample %}
   <h4>{{ well.sample_heading }}</h4><p>{{ well.sample.label }}</p>

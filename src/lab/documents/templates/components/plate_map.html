@@ -1,0 +1,49 @@
+{% from "components/ui.html" import reference %}
+
+{% macro plate_map(plate) -%}
+{% set resource = plate.resource %}
+<article class="preparation-resource{% if resource.resource.rows == 1 and resource.resource.columns == 1 %} single-container{% endif %}">
+  <div class="plate-heading">
+    <h3>{{ reference(resource.reference) }}</h3><span>{{ resource.geometry }}</span>
+  </div>
+  <div class="plate-map-viewport">
+    <svg class="plate-map" style="--plate-min-width: {{ plate.width * 0.75 }}px" viewBox="0 0 {{ plate.width }} {{ plate.height }}" role="group" aria-label="{{ resource.reference.label }} well layout">
+      <rect class="plate-surface" x="1" y="1" width="{{ plate.width - 2 }}" height="{{ plate.height - 2 }}" rx="12"/>
+      {% for column in plate.columns %}<text class="plate-axis" x="{{ 40 + loop.index0 * 32 }}" y="18">{{ column }}</text>{% endfor %}
+      {% for row in plate.rows %}<text class="plate-axis" x="16" y="{{ 44 + loop.index0 * 32 }}">{{ row }}</text>{% endfor %}
+      {% for well in plate.wells %}
+      {% if well.reference %}
+      <a href="#{{ well.reference.anchor }}" data-inspect="{{ well.reference.anchor }}"
+         data-map-well="{{ well.reference.anchor }}" data-well-label="{{ well.reference.label }}"
+         data-row="{{ well.row }}" data-column="{{ well.column }}" tabindex="0"
+         aria-label="{{ well.reference.label }}, initial volume {{ well.initial.volume|number }} µL">
+        <title>{{ well.reference.label }} · {{ well.initial.volume|number }} µL initially</title>
+        <circle class="well-hit" cx="{{ well.x }}" cy="{{ well.y }}" r="15"/>
+        <circle class="well-outline" cx="{{ well.x }}" cy="{{ well.y }}" r="12"/>
+        <circle class="well-liquid" cx="{{ well.x }}" cy="{{ well.y }}" r="{{ well.initial.radius|coordinate }}"/>
+      </a>
+      {% else %}
+      <circle class="well-unused" cx="{{ well.x }}" cy="{{ well.y }}" r="12"><title>{{ resource.reference.label }}:{{ well.coordinate }} · unused</title></circle>
+      {% endif %}
+      {% endfor %}
+    </svg>
+  </div>
+  {% if resource.loaded_wells %}
+  <details class="plate-inputs" open>
+    <summary>Reagent inputs <span>{{ resource.loaded_wells|length }}</span></summary>
+    <div class="input-heading"><span>Initial material</span><span>Well volume</span></div>
+    <ul>
+      {% for well in resource.loaded_wells %}
+      <li>
+        <span class="input-coordinate">{{ reference(well.reference, well.location.well) }}</span>
+        <span class="input-material">{{ reference(well.reference, well.fill.material) }}</span>
+        <lab-well-volume data-location="{{ well.reference.anchor }}"><span data-volume-value>{{ well.fill.volume|number }}</span> µL</lab-well-volume>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% else %}
+  <p class="plate-caption">Initially empty · {{ resource.wells|length }} wells used in this protocol</p>
+  {% endif %}
+</article>
+{%- endmacro %}

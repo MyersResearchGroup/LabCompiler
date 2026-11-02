@@ -16,13 +16,15 @@
       <dl class="overview">
         <div><dt>Target</dt><dd>{{ document.target.name }}</dd></div>
         <div><dt>Operations</dt><dd>{{ document.procedure|length }}</dd></div>
+        <div title="One fresh tip per transfer, distribution, or mix"><dt>Fresh tips</dt><dd>{{ document.tip_count }}</dd></div>
         <div><dt>Resources</dt><dd>{{ document.resources|length }}</dd></div>
         <div><dt>Output samples</dt><dd>{{ document.protocol.output_sample_ids|length }}</dd></div>
       </dl>
     </header>
     <nav aria-label="Document sections">
-      <a href="#materials">01 Materials</a><a href="#procedure">02 Procedure</a>
-      <a href="#volumes">03 Final volumes</a><a href="#details">Plan details</a>
+      <a href="#materials">01 Materials</a>
+      {% if document.preparation.plates %}<a href="#preparation">02 Preparation</a>{% endif %}
+      <a href="#procedure">{{ "03" if document.preparation.plates else "02" }} Procedure</a><a href="#volumes">{{ "04" if document.preparation.plates else "03" }} Final volumes</a><a href="#details">Plan details</a>
     </nav>
     {% if document.target.setup %}
     <section class="setup" aria-labelledby="setup-title"><h2 id="setup-title">Equipment setup</h2>
@@ -30,6 +32,7 @@
     </section>
     {% endif %}
     {% include "sections/materials.html" %}
+    {% include "sections/preparation.html" %}
     {% include "sections/procedure.html" %}
     {% include "sections/volumes.html" %}
     {% include "sections/details.html" %}

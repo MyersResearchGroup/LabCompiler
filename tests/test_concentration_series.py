@@ -20,7 +20,7 @@ from lab import CompileError, HamiltonLiquidClass, LiquidClass, compile, uL
 from lab.config import PortableLiquidClassConfig
 from lab.deck import Deck, HolderSite, Rail, Slot
 from lab.equipment import LiquidHandler
-from lab.model import Mix, Transfer
+from lab.model import Distribute, Mix, Transfer
 from lab.samples import Location
 from lab.units import units
 
@@ -47,6 +47,18 @@ def protocol():
     return recipe.protocol(inputs.prepare_wells(layout(), config), config)
 
 
+def delivered_transfers(steps):
+    """Expand distributions to compare per-well doses independently of batching."""
+    return [
+        Transfer(step.source, destination, step.volume, step.origin, step.liquid_class)
+        for step in steps
+        if isinstance(step, (Transfer, Distribute))
+        for destination in (
+            (step.destination,) if isinstance(step, Transfer) else step.destinations
+        )
+    ]
+
+
 try:
     from opentrons.simulate import simulate
 except ImportError:
@@ -55,7 +67,7 @@ except ImportError:
 
 def test_preparation_matches_independent_doses_inventory_and_identity():
     bundle = compile(protocol(), to=None)
-    transfers = [s for s in bundle.protocol.steps if isinstance(s, Transfer)]
+    transfers = delivered_transfers(bundle.protocol.steps)
 
     # Expected Van dose in uL; fixed additions are 20 Sal + 2 TMP + 2 DMSO + 10 culture.
     expected = {
@@ -114,13 +126,37 @@ def test_preparation_matches_independent_doses_inventory_and_identity():
     assert '"name": "DMSO"' in bundle.protocol.description
     assert "DMSO" in bundle.files["protocol.html"]
     assert all(s.liquid_class is not None for s in bundle.protocol.steps)
-    assert all(isinstance(s, (Transfer, Mix)) for s in bundle.protocol.steps)
+    assert all(isinstance(s, (Transfer, Distribute, Mix)) for s in bundle.protocol.steps)
     mixes = [s for s in bundle.protocol.steps if isinstance(s, Mix)]
     assert [(s.location, s.volume, s.cycles) for s in mixes] == [
         item
         for well in expected
         for item in ((Location("reagents", "B1"), 50, 3), (Location("cultures", well), 100, 3))
     ]
+
+
+def test_additions_are_grouped_by_source_and_dose_before_inoculation():
+    steps = protocol().steps
+    assert len(steps) == 47
+    assert all(
+        isinstance(step, Transfer) and step.source.resource == "medium" for step in steps[:9]
+    )
+    distributions = [step for step in steps if isinstance(step, Distribute)]
+    assert [(step.source.well, step.volume) for step in distributions] == [
+        ("A5", 2),
+        ("A3", 20),
+        ("A4", 2),
+    ]
+    assert all(
+        tuple(well.well for well in step.destinations) == configuration().wells
+        for step in distributions
+    )
+    first_inoculum_mix = next(index for index, step in enumerate(steps) if isinstance(step, Mix))
+    assert first_inoculum_mix == 20
+    assert all(
+        step.source.resource == "medium" or step.source.well != "B1"
+        for step in steps[:first_inoculum_mix]
+    )
 
 
 @pytest.mark.integration
@@ -134,25 +170,28 @@ def test_generated_ot2_actions_match_transfers_mixes_and_tips(tmp_path, monkeypa
     texts = [event["payload"]["text"] for event in log]
     aspirate = re.compile(r"Aspirating ([0-9.]+) uL from ([A-H]\d+) of .+ on slot (\d+) at ")
     dispense = re.compile(r"Dispensing ([0-9.]+) uL into ([A-H]\d+) of .+ on slot (\d+) at ")
-    pending, moves = None, []
+    pending, remaining, moves = None, Decimal(0), []
     for text in texts:
         start, end = aspirate.search(text), dispense.search(text)
         if start:
-            pending = (start[3], start[2], Decimal(start[1]))
+            assert remaining == 0
+            pending, remaining = (start[3], start[2]), Decimal(start[1])
         elif end:
             assert pending is not None
             destination = (end[3], end[2])
-            if destination != pending[:2]:
-                assert Decimal(end[1]) == pending[2]
-                moves.append((*pending[:2], *destination, pending[2]))
+            volume = Decimal(end[1])
+            assert 0 < volume <= remaining
+            remaining -= volume
+            if destination != pending:
+                moves.append((*pending, *destination, volume))
+    assert remaining == 0
     bindings = {
         b.location: tuple(b.physical.removeprefix("slot ").split("/"))
         for b in bundle.target.bindings
     }
     expected = [
         (*bindings[s.source], *bindings[s.destination], s.volume)
-        for s in bundle.protocol.steps
-        if isinstance(s, Transfer)
+        for s in delivered_transfers(bundle.protocol.steps)
     ]
     assert moves == expected
     mixes = [s for s in bundle.protocol.steps if isinstance(s, Mix)]
@@ -162,7 +201,8 @@ def test_generated_ot2_actions_match_transfers_mixes_and_tips(tmp_path, monkeypa
         assert actual.startswith(f"Mixing {expected_mix.cycles} times with a volume of ")
         volume = re.search(r"volume of ([0-9.]+)", actual)
         assert volume and Decimal(volume[1]) == expected_mix.volume
-    tips = len(expected) + len(mixes)
+    tips = len(bundle.protocol.steps)
+    assert tips == 47
     assert sum(t.startswith("Picking up tip") for t in texts) == tips
     assert sum(t.startswith("Dropping tip") for t in texts) == tips
 
@@ -255,8 +295,8 @@ def test_csv_targets_are_read_and_duplicate_conditions_remain_separate(tmp_path)
     bundle = compile(recipe.protocol(inputs.prepare_wells(layout(path), config), config), to=None)
     van = [
         s
-        for s in bundle.protocol.steps
-        if isinstance(s, Transfer) and s.source == Location("reagents", "A1")
+        for s in delivered_transfers(bundle.protocol.steps)
+        if s.source == Location("reagents", "A1")
     ]
     assert [(s.destination.well, s.volume) for s in van] == [("A1", 10), ("A5", 10)]
     assert len(bundle.manifest.samples) == 2
@@ -458,7 +498,7 @@ def test_cli_replaces_existing_bundle_with_current_inputs(tmp_path, monkeypatch,
     assert json.loads(
         description.split("Protocol configuration: ", 1)[1]
     ) == configuration().model_dump(mode="json")
-    assert len(plan["protocol"]["steps"]) == 71
+    assert len(plan["protocol"]["steps"]) == 47
     assert "Previous compilation" not in (output / "protocol.html").read_text()
     assert len(json.loads((output / "manifest.json").read_text())["outputs"]) == 9
     assert not (output / "protocol.py").exists()

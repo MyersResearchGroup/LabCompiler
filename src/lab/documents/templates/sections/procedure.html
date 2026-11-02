@@ -1,7 +1,7 @@
 {% from "components/ui.html" import reference, section_heading, table %}
 
 <section id="procedure" aria-labelledby="procedure-title">
-  {{ section_heading("02", "procedure-title", "Procedure", document.procedure|length) }}
+  {{ section_heading("03" if document.preparation.plates else "02", "procedure-title", "Procedure", document.procedure|length) }}
   <p class="procedure-note">Follow the numbered order. Use a fresh tip for each transfer,
     distribution, or mix. Quantities are planned, not measurements.</p>
   {% if document.liquid_classes %}
@@ -14,7 +14,7 @@
   {% call table("Ordered procedure", "procedure", [("Step", ""), ("Action", ""), ("Volume", "quantity"), ("From / location", ""), ("To", ""), ("Liquid class", "")]) %}
   <tbody>
     {% for step in document.procedure %}
-    <tr id="step-{{ step.number }}"><th scope="row" class="step-number">{{ "%02d"|format(step.number) }}</th>
+    <tr id="step-{{ step.number }}"><th scope="row" class="step-number">{% if document.preparation.plates %}<a href="#preparation" data-preview-step="{{ step.number }}" aria-label="Preview after step {{ step.number }}">{{ "%02d"|format(step.number) }}</a>{% else %}{{ "%02d"|format(step.number) }}{% endif %}</th>
       {% if step.instruction %}
       <td colspan="5" class="instruction">{{ step.instruction }}</td>
       {% else %}

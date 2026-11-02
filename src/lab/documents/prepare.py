@@ -18,6 +18,7 @@ from lab.documents.models import (
     WellView,
     Worksheet,
 )
+from lab.documents.preparation import build_preparation
 from lab.liquid_classes import LiquidClass, LiquidClassSpec
 from lab.model import Distribute, Mix, Step, TargetPlan, Transfer
 from lab.samples import Location
@@ -108,7 +109,9 @@ def _liquid_class(
             )
     profiles = (
         tuple(
-            build_flow_profile(index, step, *rates)
+            build_flow_profile(
+                index, step, *rates, refill_between_destinations=target.name == "Manual"
+            )
             for index, step in enumerate(steps, 1)
             if isinstance(step, (Transfer, Distribute, Mix)) and step.liquid_class == spec
         )
@@ -231,6 +234,7 @@ def build_worksheet(compilation: compiler.Compilation) -> Worksheet:
         protocol=p,
         target=target,
         digest=compilation.digest,
+        tip_count=sum(isinstance(step, (Transfer, Distribute, Mix)) for step in p.steps),
         summary=summary,
         notes=notes,
         resources=tuple(resources),
@@ -240,4 +244,5 @@ def build_worksheet(compilation: compiler.Compilation) -> Worksheet:
         liquid_classes=tuple(
             _liquid_class(ref, spec, p.steps, target) for spec, ref in classes.items()
         ),
+        preparation=build_preparation(compilation, tuple(resources)),
     )

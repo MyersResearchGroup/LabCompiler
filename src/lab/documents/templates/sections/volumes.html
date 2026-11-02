@@ -1,6 +1,6 @@
 {% from "components/ui.html" import reference, section_heading %}
 <section id="volumes" aria-labelledby="volumes-title">
-  {{ section_heading("03", "volumes-title", "Calculated final volumes") }}
+  {{ section_heading("04" if document.preparation.plates else "03", "volumes-title", "Calculated final volumes") }}
   <p class="section-note">Nonempty wells after all operations, including liquid remaining in sources.</p>
   <div class="volume-grid">
     {% for resource in document.resources if resource.final_wells %}

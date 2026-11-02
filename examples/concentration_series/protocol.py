@@ -3,14 +3,14 @@
 from collections.abc import Sequence
 
 from examples.concentration_series.inputs import PreparedWell, ProtocolConfig
-from lab import HamiltonLiquidClass, LiquidClass, Protocol, uL
+from lab import HamiltonLiquidClass, LiquidClass, Protocol, Quantity, Well, uL
 from lab.config import PortableLiquidClassConfig
 from lab.liquid_classes import LiquidClassSpec
 from lab.samples import Sample
 
 
 def protocol(prepared_wells: Sequence[PreparedWell], config: ProtocolConfig) -> Protocol:
-    """Prepare the selected wells with ordinary transfers and mixing."""
+    """Add each reagent across the plate before inoculation and final mixing."""
 
     # Resolve named configuration entries into the Lab settings used below.
     liquid_classes: dict[str, LiquidClassSpec] = {
@@ -75,24 +75,54 @@ def protocol(prepared_wells: Sequence[PreparedWell], config: ProtocolConfig) -> 
             is_input=True,
         )
 
+    def add_across_plate(
+        source: Well, doses: Sequence[tuple[Well, Quantity]], liquid_class: LiquidClassSpec
+    ) -> None:
+        """Share a tip across equal doses; retain individual transfers for unique doses."""
+        groups: dict[Quantity, list[Well]] = {}
+        for destination, dose in doses:
+            if dose.magnitude:
+                groups.setdefault(dose, []).append(destination)
+        for dose, wells in groups.items():
+            if len(wells) == 1:
+
+                # Supply a condition-specific dose from this source.
+                p.transfer(source, wells[0], volume=dose, liquid_class=liquid_class)
+            else:
+
+                # Supply the same reagent dose to these conditions with one tip.
+                p.distribute(source, wells, volume=dose, liquid_class=liquid_class)
+
+    # Establish the medium volume in every selected well before adding other reagents.
+    add_across_plate(
+        medium,
+        [(destinations[prepared.well], prepared.medium_volume) for prepared in prepared_wells],
+        liquid_classes[config.medium.liquid_class],
+    )
+
+    # Balance the solvent fraction across the selected conditions.
+    add_across_plate(
+        reagents[config.vehicle.well],
+        [(destinations[prepared.well], prepared.vehicle_volume) for prepared in prepared_wells],
+        liquid_classes[config.vehicle.liquid_class],
+    )
+    for stock in config.stocks:
+
+        # Add this working stock to every condition that uses it before changing sources.
+        add_across_plate(
+            reagents[stock.well],
+            [
+                (destinations[prepared.well], dose)
+                for prepared in prepared_wells
+                for selected, dose in prepared.stock_volumes
+                if selected.well == stock.well
+            ],
+            liquid_classes[stock.liquid_class],
+        )
+
     for prepared in prepared_wells:
         well, culture = prepared.well, prepared.culture
         destination = destinations[well]
-        additions = [
-            (medium, prepared.medium_volume, config.medium.liquid_class),
-            (reagents[config.vehicle.well], prepared.vehicle_volume, config.vehicle.liquid_class),
-        ]
-        additions.extend(
-            (reagents[stock.well], dose, stock.liquid_class)
-            for stock, dose in prepared.stock_volumes
-        )
-        for source, volume, liquid_class in additions:
-            if volume.magnitude:
-
-                # Add medium, vehicle, and solute doses to meet targets after inoculation.
-                p.transfer(
-                    source, destination, volume=volume, liquid_class=liquid_classes[liquid_class]
-                )
 
         # Resuspend the source culture before withdrawing inoculum.
         p.mix(

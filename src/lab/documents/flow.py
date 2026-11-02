@@ -37,7 +37,12 @@ class FlowProfile:
 
 
 def build_flow_profile(
-    index: int, step: Transfer | Distribute | Mix, aspiration: Decimal, dispense: Decimal
+    index: int,
+    step: Transfer | Distribute | Mix,
+    aspiration: Decimal,
+    dispense: Decimal,
+    *,
+    refill_between_destinations: bool = False,
 ) -> FlowProfile:
     """Calculate nominal V/Q phases; no HTML, ramps, or device delays."""
     label = f"Step {index} · {type(step).__name__} · {number(step.volume)} µL"
@@ -45,8 +50,11 @@ def build_flow_profile(
         phases = [(step.volume, aspiration), (step.volume, -dispense)] * step.cycles
         label += f" × {step.cycles} cycles"
     elif isinstance(step, Distribute):
-        phases = [(step.volume * len(step.destinations), aspiration)]
-        phases.extend((step.volume, -dispense) for _ in step.destinations)
+        if refill_between_destinations:
+            phases = [(step.volume, aspiration), (step.volume, -dispense)] * len(step.destinations)
+        else:
+            phases = [(step.volume * len(step.destinations), aspiration)]
+            phases.extend((step.volume, -dispense) for _ in step.destinations)
         label += f" × {len(step.destinations)} destinations"
     else:
         phases = [(step.volume, aspiration), (step.volume, -dispense)]

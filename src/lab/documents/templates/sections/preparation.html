@@ -1,0 +1,42 @@
+{% from "components/ui.html" import section_heading %}
+{% from "components/plate_map.html" import plate_map %}
+{% if document.preparation.plates %}
+<section id="preparation" aria-labelledby="preparation-title">
+  {{ section_heading("02", "preparation-title", "Preparation preview") }}
+  <p class="section-note">Explore the logical plate layout and follow the liquid through each operation.</p>
+  <lab-preparation>
+    <script type="application/json" data-preparation-frames>{{ document.preparation.frames|encode|tojson }}</script>
+    <div class="preparation-controls" hidden>
+      <div class="playback-buttons">
+        <button type="button" data-previous aria-label="Previous operation">←</button>
+        <button type="button" data-play aria-label="Play preparation preview">Play</button>
+        <button type="button" data-next aria-label="Next operation">→</button>
+      </div>
+      <label class="preparation-scrubber">Preview position
+        <input type="range" min="0" max="{{ document.procedure|length }}" value="0" step="any" aria-label="Preview position" data-preview-position>
+      </label>
+      <div class="playback-endpoints">
+        <button type="button" data-first>Initial</button><button type="button" data-last>Final</button>
+      </div>
+    </div>
+    <div class="preparation-status" aria-live="polite" aria-atomic="true">
+      <p class="preparation-position" data-preview-label>Initial loads</p>
+      <p data-preview-description>{{ document.preparation.frames[0].description }}</p>
+      <a data-preview-procedure hidden>View this operation in the procedure ↓</a>
+    </div>
+    <div class="plate-legend" aria-label="Plate map legend">
+      <span><i class="legend-liquid"></i>Liquid volume / capacity</span>
+      <span><i class="legend-source"></i>Source</span>
+      <span><i class="legend-destination"></i>Destination</span>
+      <span><i class="legend-active"></i>Mix / temperature step</span>
+    </div>
+    <div class="preparation-plates">
+      {% for plate in document.preparation.plates %}{{ plate_map(plate) }}{% endfor %}
+      {% include "components/transfer_motion.html" %}
+    </div>
+    <p class="preparation-caption">Volumes are planned after the selected operation. Filled area is proportional to volume / capacity.
+      Inspect wells for material identities and physical bindings. Pipette motion illustrates direction;
+      playback timing is chosen for readability.</p>
+  </lab-preparation>
+</section>
+{% endif %}
