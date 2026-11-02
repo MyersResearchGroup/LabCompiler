@@ -1,0 +1,44 @@
+{% from "components/ui.html" import card, fields, reference %}
+{% from "components/flow_profile.html" import profile_selector %}
+
+{% macro resource_card(resource) -%}
+{% call card(resource.reference, "Resource") %}
+  {{ fields(resource.fields) }}
+  {% if resource.wells %}
+  <h4>Wells used in this protocol</h4>
+  <ul class="detail-list">
+    {% for well in resource.wells %}
+    <li>{{ reference(well.reference, well.location.well) }} — {{ well.fill.material if well.fill else "Initially empty" }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endcall %}
+{%- endmacro %}
+
+{% macro location_card(well) -%}
+{% call card(well.reference, "Location") %}
+  <h4>Initial contents</h4><p>{{ well.fill.material if well.fill else "Initially empty" }}</p>
+  {{ fields(well.fields) }}
+  {% if well.sample %}
+  <h4>{{ well.sample_heading }}</h4><p>{{ well.sample.label }}</p>
+  {{ fields(well.sample_fields) }}
+  {% endif %}
+  {% if well.incoming %}
+  <h4>Planned incoming transfers</h4>
+  <p class="detail-caption">Across the full procedure; not a measurement of current contents.</p>
+  <ul class="detail-list">
+    {% for addition in well.incoming %}
+    <li><a href="#step-{{ addition.step_number }}">Step {{ addition.step_number }}</a>: {{ addition.volume|number }} µL from {{ reference(addition.source) }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+{% endcall %}
+{%- endmacro %}
+
+{% macro liquid_class_card(liquid_class) -%}
+{% call card(liquid_class.reference, "Liquid class") %}
+  {{ fields(liquid_class.fields) }}
+  {% for note in liquid_class.notes %}<p class="detail-caption">{{ note }}</p>{% endfor %}
+  {% if liquid_class.profiles %}{{ profile_selector(liquid_class.profiles) }}{% endif %}
+{% endcall %}
+{%- endmacro %}

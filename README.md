@@ -186,6 +186,12 @@ The cloning example writes separate `assembly`, `transformation`, and `plating` 
 
 The manifest uses logical container and well names; physical bindings remain in `plan.json`. Rewriting an identical bundle succeeds. If any generated file would replace different contents, `write()` rejects the write before changing any bundle files.
 
+The HTML worksheet shows initial loads, numbered operations, liquid-class settings, and calculated final volumes. Hover or focus a material, location, resource, or liquid class to inspect its recorded details; click to keep the card open and press Escape to dismiss it. Location cards distinguish initial loads, planned final volumes, output samples, and incoming transfers. The first paragraph of `Protocol.description` is the overview; subsequent paragraphs appear in expandable protocol notes. Styles and interactions are embedded for offline use, with a plain reference section when JavaScript is disabled and a separate print layout.
+
+The [worksheet UI guide](docs/worksheet-ui.md) describes its typed view data, reusable templates, and interactive components.
+
+Liquid-class cards plot flow rate against time for the selected operation. Aspiration is positive and dispensing negative; mixing repeats those phases. Durations are ideal calculations from nominal volume divided by the recorded rate, excluding robot movement, pauses, ramps, air gaps, and volume correction. These diagrams are not measured device traces. Native Hamilton profiles require rates captured during STAR compilation.
+
 ## Concentration series
 
 The standalone [concentration-series example](examples/concentration_series/) reads a [plate layout](examples/concentration_series/layout.csv) and [protocol configuration](examples/concentration_series/config.toml), then records ordinary transfers and mixes. The supplied layout preserves the well coordinates and target concentrations of an LMSF fitness export, with generic strain and plasmid names. The configuration selects nine conditions for `example-plasmid-1`. `lab.units.dilution_volume()` calculates stock volumes; the recipe balances vehicle and medium, inoculates, and mixes. Source identities and volumes, working-stock selection, and liquid classes are explicit. The TOML also declares development OT-2 and STAR deck layouts, parsed directly into Lab's existing `Deck` types.

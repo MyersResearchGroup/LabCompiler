@@ -21,6 +21,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "jinja2>=3.1.6,<4",
     "pint>=0.24,<0.27",
     "sbol3==1.2.0.post0",
 ]

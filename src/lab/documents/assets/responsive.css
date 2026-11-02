@@ -1,0 +1,17 @@
+@media (hover: hover) and (pointer: fine) {
+  nav a:hover, summary:hover { color: #103c32; text-decoration: underline; }
+  .procedure tbody tr:hover { background: #f6f9f7; }
+  .inspect:hover { color: var(--accent); text-decoration-style: solid; }
+  .inspector-close:hover { background: #edf5f1; color: var(--accent); }
+}
+@media (max-width: 760px) {
+  body { padding: 0; }
+  main { border-inline: 0; border-radius: 0; padding: 28px 20px; }
+  .masthead { font-size: 10px; }
+  .overview { gap: 16px 10px; grid-template-columns: repeat(2, 1fr); }
+  nav { column-gap: 20px; }
+  .count { display: none; }
+  .liquid-settings { display: block; }
+  .liquid-settings h3 { margin-bottom: 4px; }
+  .volume-grid { grid-template-columns: 1fr; }
+}

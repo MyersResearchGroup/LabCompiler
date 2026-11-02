@@ -1,0 +1,34 @@
+{% from "components/ui.html" import reference, section_heading, table %}
+
+<section id="procedure" aria-labelledby="procedure-title">
+  {{ section_heading("02", "procedure-title", "Procedure", document.procedure|length) }}
+  <p class="procedure-note">Follow the numbered order. Use a fresh tip for each transfer,
+    distribution, or mix. Quantities are planned, not measurements.</p>
+  {% if document.liquid_classes %}
+  <aside class="liquid-settings" aria-label="Liquid class settings">
+    <h3>Liquid classes</h3><ul>
+      {% for liquid_class in document.liquid_classes %}<li>{{ reference(liquid_class.reference, liquid_class.description) }}</li>{% endfor %}
+    </ul>
+  </aside>
+  {% endif %}
+  {% call table("Ordered procedure", "procedure", [("Step", ""), ("Action", ""), ("Volume", "quantity"), ("From / location", ""), ("To", ""), ("Liquid class", "")]) %}
+  <tbody>
+    {% for step in document.procedure %}
+    <tr id="step-{{ step.number }}"><th scope="row" class="step-number">{{ "%02d"|format(step.number) }}</th>
+      {% if step.instruction %}
+      <td colspan="5" class="instruction">{{ step.instruction }}</td>
+      {% else %}
+      <td class="action">{{ step.action }}</td>
+      <td class="quantity">{{ step.volume|number }} µL{% if step.volume_note %}<small>{{ step.volume_note }}</small>{% endif %}</td>
+      <td class="location">{{ reference(step.source) }}</td>
+      <td class="location">{% for destination in step.destinations %}{{ reference(destination) }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
+      <td class="settings">
+        {% if step.liquid_class %}{{ reference(step.liquid_class, css_class="liquid-class") }}{% else %}<span class="muted">Unspecified</span>{% endif %}
+        {% if step.air_gap is not none %}<small>Air gap {{ step.air_gap|number }} µL</small>{% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+  {% endcall %}
+</section>

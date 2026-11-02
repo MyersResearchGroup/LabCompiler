@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ document.protocol.name }}</title>
+  <style>{{ stylesheet|safe }}</style>
+</head>
+<body>
+<lab-worksheet>
+  <main>
+    <header>
+      <div class="masthead"><span class="brand">Lab Compiler</span><span>Protocol worksheet</span></div>
+      <h1>{{ document.protocol.name }}</h1>
+      {% if document.summary %}<p class="description">{{ document.summary }}</p>{% endif %}
+      <dl class="overview">
+        <div><dt>Target</dt><dd>{{ document.target.name }}</dd></div>
+        <div><dt>Operations</dt><dd>{{ document.procedure|length }}</dd></div>
+        <div><dt>Resources</dt><dd>{{ document.resources|length }}</dd></div>
+        <div><dt>Output samples</dt><dd>{{ document.protocol.output_sample_ids|length }}</dd></div>
+      </dl>
+    </header>
+    <nav aria-label="Document sections">
+      <a href="#materials">01 Materials</a><a href="#procedure">02 Procedure</a>
+      <a href="#volumes">03 Final volumes</a><a href="#details">Plan details</a>
+    </nav>
+    {% if document.target.setup %}
+    <section class="setup" aria-labelledby="setup-title"><h2 id="setup-title">Equipment setup</h2>
+      <ul>{% for line in document.target.setup %}<li>{{ line }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+    {% include "sections/materials.html" %}
+    {% include "sections/procedure.html" %}
+    {% include "sections/volumes.html" %}
+    {% include "sections/details.html" %}
+  </main>
+  {% include "components/inspector.html" %}
+</lab-worksheet>
+<script type="module">{{ script|safe }}</script>
+</body>
+</html>

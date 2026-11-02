@@ -25,7 +25,9 @@ def protocol(prepared_wells: Sequence[PreparedWell], config: ProtocolConfig) -> 
     }
     p = Protocol(
         "CSV culture preparation",
-        description="Concentrations refer to final volume after inoculation. "
+        description=f"Prepare {len(prepared_wells)} culture wells "
+        f"at {config.final_volume:~P} each. "
+        "Concentrations refer to final volume after inoculation.\n\n"
         f"Protocol configuration: {config.model_dump_json(indent=2)}",
     )
 

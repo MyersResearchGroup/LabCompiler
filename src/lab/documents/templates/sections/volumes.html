@@ -1,0 +1,19 @@
+{% from "components/ui.html" import reference, section_heading %}
+<section id="volumes" aria-labelledby="volumes-title">
+  {{ section_heading("03", "volumes-title", "Calculated final volumes") }}
+  <p class="section-note">Nonempty wells after all operations, including liquid remaining in sources.</p>
+  <div class="volume-grid">
+    {% for resource in document.resources if resource.final_wells %}
+    <table>
+      <caption>{{ reference(resource.reference) }}</caption>
+      <thead><tr><th scope="col">Well</th><th scope="col" class="quantity">Volume</th></tr></thead>
+      <tbody>
+        {% for well in resource.final_wells %}
+        <tr><th scope="row" class="location">{{ reference(well.reference, well.location.well) }}</th>
+          <td class="quantity">{{ well.final_volume|number }} µL</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p>No liquid remains in the declared resources.</p>{% endfor %}
+  </div>
+</section>

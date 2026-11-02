@@ -1,0 +1,46 @@
+{% macro chart(flow) -%}
+<figure class="flow-chart">
+  <figcaption>Flow rate over time</figcaption>
+  <svg viewBox="0 0 320 220" role="group" aria-label="Idealized flow rate versus time">
+    <g class="flow-grid"><path d="M48 30 H300 M48 170 H300 M48 30 V170 M300 30 V170"/></g>
+    <path class="flow-zero" d="M48 100 H300"/>
+    <g class="flow-ticks">
+      <text x="40" y="34" text-anchor="end">+{{ flow.maximum|number }}</text>
+      <text x="40" y="104" text-anchor="end">0</text>
+      <text x="40" y="174" text-anchor="end">−{{ flow.maximum|number }}</text>
+      {% for tick in flow.ticks %}
+      <text x="{{ tick.x|number }}" y="190" text-anchor="middle">{{ tick.time|short_time }}</text>
+      {% endfor %}
+    </g>
+    <text x="174" y="213" text-anchor="middle">Ideal active time (s)</text>
+    <text x="12" y="100" transform="rotate(-90 12 100)" text-anchor="middle">Flow rate (µL/s)</text>
+    {% for phase in flow.segments %}
+    <g class="flow-segment {{ phase.action|lower }}" tabindex="0"
+       data-flow-description="{{ phase.description }}" aria-label="{{ phase.description }}"
+       data-start="{{ phase.start|number }}" data-end="{{ phase.end|number }}" data-rate="{{ phase.rate|number }}" data-volume="{{ phase.volume|number }}">
+      <title>{{ phase.description }}</title>
+      <path d="M{{ phase.x1|coordinate }} 100 V{{ phase.y|coordinate }} H{{ phase.x2|coordinate }} V100"/>
+    </g>
+    {% endfor %}
+  </svg>
+  <div class="flow-legend"><span>Aspiration (+)</span><span>Dispense (−)</span></div>
+  <output class="flow-reading" aria-live="polite">Hover or focus a phase for its values.</output>
+  <p class="detail-caption">Idealized nominal-volume profile (time = volume / rate).
+    Excludes motion, pauses, ramps, air gaps, and volume correction. Not a measured trace.</p>
+</figure>
+{%- endmacro %}
+
+{% macro profile_selector(profiles) -%}
+<lab-flow-profile>
+  <label class="profile-select">Operation
+    <select disabled data-profile-select>
+      {% for profile in profiles %}<option value="{{ profile.step_id }}">{{ profile.label }}</option>{% endfor %}
+    </select>
+  </label>
+  {% for profile in profiles %}
+  <div data-flow-profile="{{ profile.step_id }}"{% if not loop.first %} hidden{% endif %}>
+    {{ chart(profile) }}
+  </div>
+  {% endfor %}
+</lab-flow-profile>
+{%- endmacro %}

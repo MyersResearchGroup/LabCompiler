@@ -42,9 +42,11 @@ def main() -> None:
         layout = PlateLayout.model_validate({"conditions": list(reader)})
         prepared_wells = prepare_wells(layout, config)
         p = protocol(prepared_wells, config)
+        summary, _, notes = p.description.partition("\n\n")
         p.description = (
-            f"Targets from {args.csv.name} (SHA256 {hashlib.sha256(csv_bytes).hexdigest()}). "
-            + p.description
+            f"{summary}\n\n"
+            f"Targets from {args.csv.name} (SHA256 {hashlib.sha256(csv_bytes).hexdigest()}).\n\n"
+            f"{notes}"
         )
         handler = None if args.target == "manual" else LiquidHandler(args.target)
         bundle = compile(

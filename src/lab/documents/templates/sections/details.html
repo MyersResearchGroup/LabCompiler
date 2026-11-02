@@ -1,0 +1,19 @@
+{% from "components/detail_cards.html" import resource_card, location_card, liquid_class_card %}
+<footer id="details">
+  <h2>Plan details</h2>
+  {% if document.notes %}
+  <details class="notes"><summary>Full protocol notes and configuration</summary><pre>{{ document.notes }}</pre></details>
+  {% endif %}
+  <details class="reference-details" open>
+    <summary>Material, location &amp; liquid-class reference</summary>
+    <div class="reference-grid">
+      {% for resource in document.resources %}
+        {{ resource_card(resource) }}
+        {% for well in resource.wells %}{{ location_card(well) }}{% endfor %}
+      {% endfor %}
+      {% for liquid_class in document.liquid_classes %}{{ liquid_class_card(liquid_class) }}{% endfor %}
+    </div>
+  </details>
+  <p><a href="plan.json">Complete plan &amp; physical bindings</a></p>
+  <p class="digest">Plan SHA256 <code>{{ document.digest }}</code></p>
+</footer>

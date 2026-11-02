@@ -1,0 +1,36 @@
+{% from "components/ui.html" import reference, section_heading, table %}
+
+{% macro resource_cell(resource) -%}
+<th scope="rowgroup" rowspan="{{ [1, resource.loaded_wells|length]|max }}">
+  {{ reference(resource.reference) }}<small>{{ resource.geometry }}</small>
+  <small>{{ resource.resource.capacity|number }} µL capacity per well</small>
+  <small>{{ resource.resource.dead_volume|number }} µL dead volume per well</small>
+</th>
+{%- endmacro %}
+
+<section id="materials" aria-labelledby="materials-title">
+  {{ section_heading("01", "materials-title", "Materials & placement") }}
+  <p class="section-note">Prepare these initial loads before starting the procedure.</p>
+  <p class="interaction-hint">Hover or focus an underlined item for details; click to keep them open.</p>
+  {% call table("Materials and placement", "materials", [("Resource", ""), ("Well", ""), ("Initial material", ""), ("Load", "quantity"), ("Physical location", "")]) %}
+    {% for resource in document.resources %}
+    <tbody>
+      {% for well in resource.loaded_wells %}
+      <tr>
+        {% if loop.first %}{{ resource_cell(resource) }}{% endif %}
+        <td class="location">{{ reference(well.reference, well.location.well) }}</td>
+        <td>{{ reference(well.reference, well.fill.material) }}</td>
+        <td class="quantity">{{ well.fill.volume|number }} µL</td>
+        <td class="physical">{{ reference(well.reference, well.physical) }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        {{ resource_cell(resource) }}
+        <td>—</td><td class="muted">{{ reference(resource.reference, "Initially empty") }}</td>
+        <td class="quantity">0 µL</td><td class="physical">{{ resource.physical_summary }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% endfor %}
+  {% endcall %}
+</section>
