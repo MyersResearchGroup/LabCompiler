@@ -188,17 +188,17 @@ The manifest uses logical container and well names; physical bindings remain in 
 
 ## Concentration series
 
-The standalone [concentration-series example](examples/concentration_series/) reads an LMSF fitness CSV and [protocol configuration](examples/concentration_series/config.toml), then records ordinary transfers and mixes. The supplied configuration selects nine July conditions. `lab.units.dilution_volume()` calculates stock volumes; the recipe balances vehicle and medium, inoculates, and mixes. Source identities and volumes, working-stock selection, and liquid classes are explicit. The TOML also declares development OT-2 and STAR deck layouts, parsed directly into Lab's existing `Deck` types.
+The standalone [concentration-series example](examples/concentration_series/) reads a [plate layout](examples/concentration_series/layout.csv) and [protocol configuration](examples/concentration_series/config.toml), then records ordinary transfers and mixes. The supplied layout preserves the well coordinates and target concentrations of an LMSF fitness export, with generic strain and plasmid names. The configuration selects nine conditions for `example-plasmid-1`. `lab.units.dilution_volume()` calculates stock volumes; the recipe balances vehicle and medium, inoculates, and mixes. Source identities and volumes, working-stock selection, and liquid classes are explicit. The TOML also declares development OT-2 and STAR deck layouts, parsed directly into Lab's existing `Deck` types.
 
 `main()` parses the TOML into `ProtocolConfig` and the CSV into `PlateLayout` using Pydantic. The reusable quantity fields and liquid-class schemas come from [`lab.config`](docs/configuration.md), available through `lab-compiler[config]` and included in development dependencies (`uv sync --locked`). `prepare_wells()` checks the inputs together and calculates doses; `protocol()` consumes those prepared wells and the validated configuration to record operations. The configuration mirrors the TOML: `medium.name` is `config.medium.name`, and liquid-class names remain names until protocol construction resolves them. Saved configuration comes from that same model.
 
 ```sh
 uv run --no-sync python -m examples.concentration_series \
-  --csv docs/lmsf/assay-options/2026-07-23_Mar-Pro_OD-test-5-plates_growth-plate_5.csv \
+  --csv examples/concentration_series/layout.csv \
   --config examples/concentration_series/config.toml --target manual
 ```
 
-Use `--target ot2` or `--target star` with the corresponding optional SDK installed; `--out` selects the bundle directory. The [LMSF component analysis](docs/lmsf/components.md) explains the inputs and development hardware. The example ends with an inoculated plate; incubation and measurement need separately specified methods.
+Use `--target ot2` or `--target star` with the corresponding optional SDK installed; `--out` selects the bundle directory. The example ends with an inoculated plate; incubation and measurement need separately specified methods.
 
 `LiquidClass` supplies unit-checked aspiration and dispense rates on either robot family. `HamiltonLiquidClass` references a native STAR built-in, whose definition is captured during compilation. Both can be passed as `liquid_class=` to `transfer()`, `distribute()`, and `mix()`. See [liquid classes](docs/liquid-classes.md) for examples, settings coverage, calibration boundaries, and the data needed to compare with VENUS.
 
@@ -212,6 +212,8 @@ uv run --no-sync ruff check .
 uv run --no-sync mypy
 uv run --no-sync pytest
 ```
+
+The concentration-series tests use the same `layout.csv` and `config.toml` as the example. They exercise parsing, dose calculations, compilation, robot simulation, and provenance without additional data files or configuration.
 
 CI runs the OT-2 equivalence tests against a pinned PUDU revision. To compare against another checkout, set `PUDU_SOURCE` to its `src` directory. When this variable is set, missing PUDU source or the Opentrons SDK fails the run.
 

@@ -25,7 +25,7 @@ from lab.samples import Location
 from lab.units import units
 
 ROOT = Path(__file__).resolve().parents[1]
-CSV = ROOT / "docs/lmsf/assay-options/2026-07-23_Mar-Pro_OD-test-5-plates_growth-plate_5.csv"
+CSV = ROOT / "examples/concentration_series/layout.csv"
 CONFIG = ROOT / "examples/concentration_series/config.toml"
 
 
@@ -56,6 +56,7 @@ except ImportError:
 def test_preparation_matches_independent_doses_inventory_and_identity():
     bundle = compile(protocol(), to=None)
     transfers = [s for s in bundle.protocol.steps if isinstance(s, Transfer)]
+
     # Expected Van dose in uL; fixed additions are 20 Sal + 2 TMP + 2 DMSO + 10 culture.
     expected = {
         "A1": (None, "0"),
@@ -105,7 +106,7 @@ def test_preparation_matches_independent_doses_inventory_and_identity():
     assert len(bundle.manifest.samples) == 9
     assert {p.location.well for p in bundle.manifest.placements} == set(expected)
     assert all(
-        s.material_identity == "pDRAC18-2-A"
+        s.material_identity == "example-plasmid-1"
         and s.parent_ids == ("inoculum-B1",)
         and s.replicate is None
         for s in bundle.manifest.samples
@@ -308,6 +309,7 @@ def test_config_round_trip_preserves_toml_shape_and_resolves_classes_explicitly(
     assert star.carriers[0].location == Rail(15)
     assert isinstance(config.liquid_classes["aqueous"], PortableLiquidClassConfig)
     assert inputs.ProtocolConfig.model_validate_json(config.model_dump_json()) == config
+
     # Optional native definitions retain their config alias until explicit resolution.
     raw["liquid_classes"]["aqueous"] = {
         "kind": "hamilton",
@@ -459,8 +461,8 @@ def test_cli_config_and_csv_provenance_match_the_prepared_inputs(tmp_path, monke
     [
         (None, ("0.78125", "NaN"), "finite"),
         (None, ("inducer1Units", "unknownColumn"), "CSV schema"),
-        (None, ('"A5","A",5', '"A5","A",6'), "Inconsistent position"),
-        (None, ("pDRAC18-2-A", "unknown-plasmid"), "no source"),
+        (None, ("A5,A,5", "A5,A,6"), "Inconsistent position"),
+        (None, ("example-plasmid-1", "unknown-plasmid"), "no source"),
         (('"A1", "A5"', '"A1", "A13"'), None, "wells.1"),
         (('solute = "Van"', 'solute = "unknown"'), None, "no stock"),
         (('vehicle_fraction = "0.02"', 'vehicle_fraction = "0.005"'), None, "exceed"),

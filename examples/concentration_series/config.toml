@@ -1,5 +1,5 @@
 # Illustrative preparation inputs, NOT recovered or validated LMSF method settings.
-# Use with the July fitness CSV. The deck tables below declare development
+# Use with layout.csv. The deck tables below declare development
 # equipment, capacities, tips, positions, and channel limits.
 # ProtocolConfig mirrors these tables and fields. Quantities include units;
 # liquid_class values name entries in the liquid_classes table below.
@@ -8,6 +8,7 @@ final_volume = "200 uL"             # includes inoculum and every stock addition
 inoculum_volume = "10 uL"
 vehicle_fraction = "0.02"           # DMSO v/v; balancing source is pure DMSO
 source_dead_volume = "20 uL"
+
 # This recipe handles independent single-solute stocks, not premixes or passage.
 # Assert known absence of every CSV solute and DMSO from medium AND all cultures.
 solute_and_vehicle_free_medium_and_cultures = true
@@ -98,8 +99,8 @@ vehicle_fraction = "1"
 liquid_class = "dmso"
 
 [[cultures]]
-strain = "Mar-Clo"
-plasmid = "pDRAC18-2-A"
+strain = "example-strain"
+plasmid = "example-plasmid-1"
 well = "B1"
 volume = "300 uL"
 liquid_class = "culture"
