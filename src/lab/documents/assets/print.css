@@ -1,0 +1,31 @@
+@page { size: A4; margin: 14mm; }
+@media print {
+  :root { background: white; }
+  body { padding: 0; font-size: 9pt; }
+  main { max-width: none; padding: 0; border: 0; }
+  h1 { font-size: 24pt; margin-top: 16px; }
+  h2 { font-size: 14pt; }
+  .description { font-size: 10pt; }
+  .overview { margin-block: 18px; }
+  dd { font-size: 18pt; }
+  nav, .notes, .reference-details, .inspector, .interactive .interaction-hint { display: none; }
+  .table-scroll { overflow: visible; }
+  table, .materials, .procedure { min-width: 0; font-size: 8pt; }
+  th, td, .procedure td, .procedure th { padding: 6px; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  .section-heading, h2, h3, .section-note { break-after: avoid; }
+  .location { font-size: 8pt; }
+  .physical, .settings, thead th { font-size: 7pt; }
+  small, .materials th[scope="rowgroup"] small { font-size: 7pt; }
+  .materials th[scope="rowgroup"] { min-width: 0; }
+  .procedure-note { padding: 8px; font-size: 9pt; }
+  .liquid-settings { font-size: 8pt; }
+  .volume-grid { display: block; columns: 3; column-gap: 16px; }
+  .volume-grid table { break-inside: avoid; margin-bottom: 16px; }
+  a { color: inherit; text-decoration: none; }
+  .liquid-class { border: 0; padding: 0; background: none; }
+  .inspect { text-decoration: none; color: inherit; }
+  .inspect-active { background: none; }
+  section, footer { margin-top: 24px; }
+}

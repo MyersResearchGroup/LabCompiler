@@ -1,0 +1,37 @@
+{% macro reference(ref, label=none, css_class="") -%}
+<a href="#{{ ref.anchor }}" data-inspect="{{ ref.anchor }}" class="inspect {{ css_class }}">{{ ref.label if label is none else label }}</a>
+{%- endmacro %}
+
+{% macro fields(items) -%}
+<dl class="detail-fields">
+  {% for label, value in items %}
+  <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+  {% endfor %}
+</dl>
+{%- endmacro %}
+
+{% macro section_heading(number, anchor, title, count=none) -%}
+<div class="section-heading">
+  <span>{{ number }}</span><h2 id="{{ anchor }}">{{ title }}</h2>
+  {% if count is not none %}<span class="count">{{ count }} operations</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro table(label, css_class, columns) -%}
+<div class="table-scroll" role="region" aria-label="{{ label }}" tabindex="0">
+  <table class="{{ css_class }}">
+    <thead><tr>
+      {% for label, css in columns %}<th scope="col"{% if css %} class="{{ css }}"{% endif %}>{{ label }}</th>{% endfor %}
+    </tr></thead>
+    {{ caller() }}
+  </table>
+</div>
+{%- endmacro %}
+
+{% macro card(ref, kind) -%}
+<article id="{{ ref.anchor }}" class="reference-card">
+  <p class="detail-kind">{{ kind }}</p>
+  <h3 class="detail-title">{{ ref.label }}</h3>
+  {{ caller() }}
+</article>
+{%- endmacro %}

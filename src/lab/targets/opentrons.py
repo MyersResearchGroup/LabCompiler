@@ -10,6 +10,7 @@ from lab.deck import Container, Deck, DeckLayout, DeckSite, HolderSite, Slot
 from lab.documents import describe
 from lab.equipment import LabwareModel, ModuleModel, TipRackModel
 from lab.labware import LabwareKind
+from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
     Binding,
     Distribute,
@@ -261,6 +262,8 @@ class Opentrons:
         for index, step in enumerate(protocol.steps):
             commands.append(f"context.comment({describe(step)!r})")
             if isinstance(step, (Transfer, Mix, Distribute)):
+                if isinstance(step.liquid_class, HamiltonLiquidClass):
+                    raise step_error(index, step, "Hamilton liquid classes require the STAR target")
                 try:
                     pipette = select_pipette(step.volume)
                 except CompileError as exc:
@@ -273,6 +276,16 @@ class Opentrons:
                 if step.volume > tip_capacity:
                     raise step_error(index, step, "Volume is outside the pipette/tip range")
                 tool = pipette.variable
+                if isinstance(step.liquid_class, LiquidClass):
+                    spec = step.liquid_class
+                    commands.extend(
+                        (
+                            f"previous_rates = ({tool}.flow_rate.aspirate, "
+                            f"{tool}.flow_rate.dispense)",
+                            f"{tool}.flow_rate.aspirate = {number(spec.aspiration_flow_rate_ul_s)}",
+                            f"{tool}.flow_rate.dispense = {number(spec.dispense_flow_rate_ul_s)}",
+                        )
+                    )
                 commands.append(f"{tool}.pick_up_tip({tip})")
                 amount = number(step.volume)
                 if isinstance(step, Transfer):
@@ -292,6 +305,10 @@ class Opentrons:
                 else:
                     commands.append(f"{tool}.mix({step.cycles}, {amount}, {refs[step.location]})")
                 commands.append(f"{tool}.drop_tip()")
+                if isinstance(step.liquid_class, LiquidClass):
+                    commands.append(
+                        f"{tool}.flow_rate.aspirate, {tool}.flow_rate.dispense = previous_rates"
+                    )
             elif isinstance(step, SetTemperature):
                 module = temperature_of.get(step.resource)
                 if module is None:

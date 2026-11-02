@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from lab.liquid_classes import LiquidClassSpec, validate_liquid_class
 from lab.model import (
     Distribute,
     Fill,
@@ -191,11 +192,22 @@ class Protocol:
         if is_output:
             self._output_sample_ids.append(sample.id)
 
-    def transfer(self, source: Well, destination: Well, *, volume: Any) -> None:
+    def transfer(
+        self,
+        source: Well,
+        destination: Well,
+        *,
+        volume: Any,
+        liquid_class: LiquidClassSpec | None = None,
+    ) -> None:
+        """Move liquid using optional explicit rates or a native Hamilton class."""
+        validate_liquid_class(liquid_class)
         start, end = self._location(source), self._location(destination)
         if start == end:
             raise ValueError("Transfer source and destination must differ")
-        self._steps.append(Transfer(start, end, magnitude(volume, "microliter"), _origin()))
+        self._steps.append(
+            Transfer(start, end, magnitude(volume, "microliter"), _origin(), liquid_class)
+        )
 
     def distribute(
         self,
@@ -204,8 +216,10 @@ class Protocol:
         *,
         volume: Any,
         air_gap: Any = None,
+        liquid_class: LiquidClassSpec | None = None,
     ) -> None:
         """Move the same volume from one source to each destination, using one tip."""
+        validate_liquid_class(liquid_class)
         start = self._location(source)
         ends = tuple(self._location(destination) for destination in destinations)
         if not ends:
@@ -213,13 +227,30 @@ class Protocol:
         if any(end == start for end in ends):
             raise ValueError("Distribute source and destination must differ")
         gap = magnitude(air_gap, "microliter") if air_gap is not None else None
-        self._steps.append(Distribute(start, ends, magnitude(volume, "microliter"), gap, _origin()))
+        self._steps.append(
+            Distribute(start, ends, magnitude(volume, "microliter"), gap, _origin(), liquid_class)
+        )
 
-    def mix(self, well: Well, *, volume: Any, cycles: int) -> None:
+    def mix(
+        self,
+        well: Well,
+        *,
+        volume: Any,
+        cycles: int,
+        liquid_class: LiquidClassSpec | None = None,
+    ) -> None:
+        """Repeat aspiration and dispense at one well, with the supplied class on both."""
+        validate_liquid_class(liquid_class)
         if type(cycles) is not int or cycles < 1:
             raise ValueError("Mix cycles must be a positive integer")
         self._steps.append(
-            Mix(self._location(well), magnitude(volume, "microliter"), cycles, _origin())
+            Mix(
+                self._location(well),
+                magnitude(volume, "microliter"),
+                cycles,
+                _origin(),
+                liquid_class,
+            )
         )
 
     def wait(self, duration: Any) -> None:

@@ -186,6 +186,32 @@ The cloning example writes separate `assembly`, `transformation`, and `plating` 
 
 The manifest uses logical container and well names; physical bindings remain in `plan.json`. Rewriting an identical bundle succeeds. If any generated file would replace different contents, `write()` rejects the write before changing any bundle files.
 
+The HTML worksheet shows initial loads, numbered operations, liquid-class settings, and calculated final volumes. Hover or focus a material, location, resource, or liquid class to inspect its recorded details; click to keep the card open and press Escape to dismiss it. Location cards distinguish initial loads, planned final volumes, output samples, and incoming transfers. The first paragraph of `Protocol.description` is the overview; subsequent paragraphs appear in expandable protocol notes. Styles and interactions are embedded for offline use, with a plain reference section when JavaScript is disabled and a separate print layout.
+
+The [worksheet UI guide](docs/worksheet-ui.md) describes its typed view data, reusable templates, and interactive components.
+
+The preparation preview shows logical plate layouts and reagent inputs. Step through or play the procedure to see source volumes decrease and destination wells fill; a schematic pipette and directional paths show each transfer. Distributions visit each destination, and mixes animate in place. Click a procedure step number to preview that state. Well details and reagent amounts follow the selected step. The preview uses the compiler's volume accounting, with animation timing chosen for readability. It shows planned liquid movement; physical well bindings are available in the detail cards.
+
+Liquid-class cards plot flow rate against time for the selected operation. Aspiration is positive and dispensing negative; mixing repeats those phases. Durations are ideal calculations from nominal volume divided by the recorded rate, excluding robot movement, pauses, ramps, air gaps, and volume correction. These diagrams are not measured device traces. Native Hamilton profiles require rates captured during STAR compilation.
+
+## Concentration series
+
+Preparation proceeds across the plate: medium first, then vehicle and each stock, followed by inoculation and mixing. Equal doses from the same source share a `distribute()` operation and one tip. Unique doses remain individual transfers. Preparing the full supplied layout requires 327 tips, including source resuspension and destination mixing. The worksheet reports the tip count alongside the operation count.
+
+The standalone [concentration-series example](examples/concentration_series/) reads a [plate layout](examples/concentration_series/layout.csv) and [protocol configuration](examples/concentration_series/config.toml), then records ordinary transfers and mixes. The supplied layout preserves the well coordinates and target concentrations of an LMSF fitness export, with generic strain and plasmid names. Every CSV row is prepared by default: 96 wells covering 24 conditions for each of four plasmid samples. An optional `wells` list in the configuration selects a subset explicitly. `lab.units.dilution_volume()` calculates stock volumes; the recipe balances vehicle and medium, inoculates, and mixes. Source identities and volumes, working-stock selection, and liquid classes are explicit. The TOML also declares development OT-2 and STAR deck layouts, parsed directly into Lab's existing `Deck` types, with reservoir sources and enough tips for the full plate.
+
+`main()` parses the TOML into `ProtocolConfig` and the CSV into `PlateLayout` using Pydantic. The reusable quantity fields and liquid-class schemas come from [`lab.config`](docs/configuration.md), available through `lab-compiler[config]` and included in development dependencies (`uv sync --locked`). `prepare_wells()` checks the inputs together and calculates doses; `protocol()` consumes those prepared wells and the validated configuration to record operations. The configuration mirrors the TOML: `medium.name` is `config.medium.name`, and liquid-class names remain names until protocol construction resolves them. Saved configuration comes from that same model.
+
+```sh
+uv run --no-sync python -m examples.concentration_series \
+  --csv examples/concentration_series/layout.csv \
+  --config examples/concentration_series/config.toml --target manual
+```
+
+Use `--target ot2` or `--target star` with the corresponding optional SDK installed. Output goes to `build/concentration_series/csv/<target>/`; `--out` selects another directory. Rerunning replaces the generated bundle in that directory. The example ends with an inoculated plate; incubation and measurement need separately specified methods.
+
+`LiquidClass` supplies unit-checked aspiration and dispense rates on either robot family. `HamiltonLiquidClass` references a native STAR built-in, whose definition is captured during compilation. Both can be passed as `liquid_class=` to `transfer()`, `distribute()`, and `mix()`. See [liquid classes](docs/liquid-classes.md) for examples, settings coverage, calibration boundaries, and the data needed to compare with VENUS.
+
 ## Development
 
 From the repository root:
@@ -196,6 +222,8 @@ uv run --no-sync ruff check .
 uv run --no-sync mypy
 uv run --no-sync pytest
 ```
+
+The concentration-series tests use the same `layout.csv` and `config.toml` as the example. They exercise parsing, dose calculations, compilation, robot simulation, and provenance without additional data files or configuration.
 
 CI runs the OT-2 equivalence tests against a pinned PUDU revision. To compare against another checkout, set `PUDU_SOURCE` to its `src` directory. When this variable is set, missing PUDU source or the Opentrons SDK fails the run.
 

@@ -25,6 +25,7 @@ from lab.deck import (
 from lab.documents import describe
 from lab.equipment import CarrierModel, LabwareModel, TipRackModel
 from lab.labware import LabwareKind
+from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
     Binding,
     Distribute,
@@ -46,6 +47,10 @@ from lab.validation import CompileError, step_error
 _sdk_import_error: ImportError | None = None
 try:
     import pylabrobot.resources as plr
+    from pylabrobot.liquid_handling.liquid_classes.hamilton import (
+        HamiltonLiquidClass as PLRHamiltonLiquidClass,
+    )
+    from pylabrobot.liquid_handling.liquid_classes.hamilton import star as star_liquid_classes
     from pylabrobot.resources import (
         Container,
         ItemizedResource,
@@ -55,6 +60,21 @@ try:
     from pylabrobot.resources.hamilton import HamiltonSTARDeck
 except ImportError as exc:
     _sdk_import_error = exc
+
+
+def hamilton_liquid_class_names() -> tuple[str, ...]:
+    """List built-in STAR symbols in the installed, optional PyLabRobot SDK."""
+    if _sdk_import_error is not None:
+        raise ImportError(
+            "Install lab-compiler[star] to list Hamilton classes"
+        ) from _sdk_import_error
+    return tuple(
+        sorted(
+            name
+            for name, value in vars(star_liquid_classes).items()
+            if not name.startswith("_") and isinstance(value, PLRHamiltonLiquidClass)
+        )
+    )
 
 
 @dataclass
@@ -165,6 +185,8 @@ class STAR:
             "external_thermal_resources": self.external_thermal_resources,
         }
         commands = []
+        native_definitions = {}
+        native_initializers = []
         tip_index = 0
         for index, step in enumerate(protocol.steps):
             if isinstance(step, (Thermocycle, SetTemperature)):
@@ -197,6 +219,23 @@ class STAR:
                     )
                 amount = number(step.volume)
                 channels = f"use_channels=[{self.channel}]"
+                aspiration = dispense = ""
+                if isinstance(step.liquid_class, LiquidClass):
+                    spec = step.liquid_class
+                    aspiration = f", flow_rates=[{number(spec.aspiration_flow_rate_ul_s)}]"
+                    dispense = f", flow_rates=[{number(spec.dispense_flow_rate_ul_s)}]"
+                elif isinstance(step.liquid_class, HamiltonLiquidClass):
+                    name = step.liquid_class.name
+                    native = getattr(star_liquid_classes, name, None)
+                    if not isinstance(native, PLRHamiltonLiquidClass):
+                        raise step_error(index, step, f"Unknown Hamilton STAR liquid class: {name}")
+                    if name not in native_definitions:
+                        definition = vars(native).copy()
+                        native_definitions[name] = definition
+                        native_initializers.append(
+                            f"    {name!r}: HamiltonLiquidClass(**{definition!r}),"
+                        )
+                    aspiration = dispense = f", hamilton_liquid_classes=[LIQUID_CLASSES[{name!r}]]"
                 commands.append(
                     f"await lh.pick_up_tips([deck.get_resource({spot.name!r})], {channels})"
                 )
@@ -204,9 +243,9 @@ class STAR:
                     commands.extend(
                         (
                             f"await lh.aspirate([{refs[step.source]}], "
-                            f"vols=[{amount}], {channels})",
+                            f"vols=[{amount}], {channels}{aspiration})",
                             f"await lh.dispense([{refs[step.destination]}], "
-                            f"vols=[{amount}], {channels})",
+                            f"vols=[{amount}], {channels}{dispense})",
                         )
                     )
                 elif isinstance(step, Distribute):
@@ -214,9 +253,9 @@ class STAR:
                         commands.extend(
                             (
                                 f"await lh.aspirate([{refs[step.source]}], "
-                                f"vols=[{amount}], {channels})",
+                                f"vols=[{amount}], {channels}{aspiration})",
                                 f"await lh.dispense([{refs[destination]}], "
-                                f"vols=[{amount}], {channels})",
+                                f"vols=[{amount}], {channels}{dispense})",
                             )
                         )
                 else:
@@ -224,9 +263,9 @@ class STAR:
                         (
                             f"for _ in range({step.cycles}):",
                             f"    await lh.aspirate([{refs[step.location]}], "
-                            f"vols=[{amount}], {channels})",
+                            f"vols=[{amount}], {channels}{aspiration})",
                             f"    await lh.dispense([{refs[step.location]}], "
-                            f"vols=[{amount}], {channels})",
+                            f"vols=[{amount}], {channels}{dispense})",
                         )
                     )
                 commands.append(f"await lh.discard_tips({channels}, allow_nonzero_volume=False)")
@@ -276,10 +315,19 @@ class STAR:
             isinstance(step, (Thermocycle, SetTemperature)) for step in protocol.steps
         )
         thermal_import = "from inspect import iscoroutinefunction\n" if has_thermal else ""
+        liquid_import = ""
+        if native_definitions:
+            configuration["hamilton_liquid_classes"] = native_definitions
+            liquid_import = (
+                "from pylabrobot.liquid_handling.liquid_classes.hamilton "
+                "import HamiltonLiquidClass\n"
+                "LIQUID_CLASSES = {\n" + "\n".join(native_initializers) + "\n}\n"
+            )
         source = (
             '"""Generated PyLabRobot protocol. Direct execution uses a software backend."""\n\n'
             "import asyncio\nimport json\nfrom importlib.metadata import version\n"
             f"{thermal_import}\n"
+            f"{liquid_import}\n"
             "from pylabrobot.liquid_handling import LiquidHandler\n"
             "from pylabrobot.liquid_handling.backends import LiquidHandlerChatterboxBackend\n"
             "from pylabrobot.resources import Resource\n\n"

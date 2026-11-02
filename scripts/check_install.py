@@ -22,7 +22,7 @@ def main() -> None:
     package = distribution("lab-compiler")
     assert package.version == lab.__version__
     assert package.metadata["Name"] == "lab-compiler"
-    assert set(package.metadata.get_all("Provides-Extra", [])) == {"opentrons", "star"}
+    assert set(package.metadata.get_all("Provides-Extra", [])) == {"config", "opentrons", "star"}
     assert files("lab").joinpath("py.typed").is_file()
     assert any(str(path).endswith("licenses/LICENSE") for path in package.files or ())
     assert lab.__file__ is not None
@@ -45,7 +45,7 @@ def main() -> None:
         assert plan["compiler_version"] == package.version
         assert (output / "protocol.html").stat().st_size > 0
 
-    isolated = {"opentrons", "pylabrobot", "labop", "uml", "sbol_factory"}
+    isolated = {"pydantic", "opentrons", "pylabrobot", "labop", "uml", "sbol_factory"}
     assert not any(name.split(".")[0] in isolated for name in sys.modules)
     assert not files("lab").joinpath("labop").is_dir()
     print(f"lab-compiler {package.version}: installed package check passed")
