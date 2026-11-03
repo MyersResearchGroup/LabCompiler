@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <em>A compiler for biological engineering. Describe experiments in Python, check the protocol, and produce a document or a robot program.</em>
+  <em>A compiler for liquid handling. Describe experiments in Python, check the protocol, and produce a document or a robot program.</em>
 </p>
 
 Lab Compiler is the Python compiler for laboratory work. A `Protocol` records materials, wells, steps, and optional sample identities and lineage. Compilation checks volumes, units, bindings, and sample declarations, then writes a printable document and code for the liquid handler you name.
