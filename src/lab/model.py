@@ -5,6 +5,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
+from lab.limits import PipettingLimits
 from lab.liquid_classes import HamiltonLiquidClass, LiquidClass, LiquidClassSpec
 from lab.samples import Location, OutputManifest, Sample, SamplePlacement
 from lab.units import number
@@ -145,11 +146,14 @@ class Binding:
 
 @dataclass(frozen=True)
 class TargetPlan:
+    """A target's bindings, configuration, generated source, setup notes, and pipetting heads."""
+
     name: str
     bindings: tuple[Binding, ...]
     configuration_json: str
     source: str | None = None
     setup: tuple[str, ...] = ()
+    limits: tuple[PipettingLimits, ...] = ()
 
 
 def encode(value: Any) -> Any:

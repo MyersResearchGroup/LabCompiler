@@ -1,5 +1,6 @@
 """Plate designs: the desired end state of a plate, the patterns in it, and its preparation."""
 
+from lab.plates.advice import advise_design
 from lab.plates.arrange import (
     Arrangement,
     ConditionSpec,
@@ -48,6 +49,7 @@ __all__ = [
     "Target",
     "WellPlan",
     "WellTarget",
+    "advise_design",
     "arrange",
     "assemble",
     "canonical_concentration",

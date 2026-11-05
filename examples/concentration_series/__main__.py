@@ -8,6 +8,7 @@ automatic selection. The example ends with an inoculated culture plate.
 
 import argparse
 import hashlib
+import sys
 import tomllib
 from pathlib import Path
 
@@ -43,6 +44,11 @@ def main() -> None:
         choices=("direct", "serial", "auto"),
         help="Override preparation.strategy from the configuration",
     )
+    parser.add_argument(
+        "--warn-below",
+        help='Smallest volume you trust any pipette to deliver, e.g. "2 uL"; '
+        "overrides preparation.warn_below",
+    )
     parser.add_argument("--out")
     args = parser.parse_args()
     try:
@@ -50,6 +56,8 @@ def main() -> None:
             raw = tomllib.load(stream)
         if args.strategy is not None:
             raw.setdefault("preparation", {})["strategy"] = args.strategy
+        if args.warn_below is not None:
+            raw.setdefault("preparation", {})["warn_below"] = args.warn_below
         config = ProtocolConfig.model_validate(raw)
         csv_bytes = args.csv.read_bytes()
         design = select(
@@ -77,8 +85,15 @@ def main() -> None:
             deck=config.deck if handler else None,
             liquid_handler=handler,
             to=args.out or f"build/concentration_series/csv/{args.target}",
+            warn_below=config.preparation.warn_below,
+            resolution=config.preparation.resolution,
         )
         print(bundle.directory)
+        for diagnostic in bundle.diagnostics:
+            step = (
+                f" (step {diagnostic.step_index + 1})" if diagnostic.step_index is not None else ""
+            )
+            print(f"{diagnostic.severity.value}{step}: {diagnostic.message}", file=sys.stderr)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         parser.error(str(exc))
 

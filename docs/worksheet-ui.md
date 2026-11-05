@@ -11,7 +11,7 @@ The implementation lives in `src/lab/documents/`:
 | `flow.py` | Calculate the numeric phases and coordinates of idealized flow profiles. |
 | `preparation.py` | Turn the compiler's volume trace into plate geometry and a snapshot after each operation. |
 | `templates/worksheet.html` | Compose the page and embed its assets. |
-| `templates/sections/` | Materials, preparation preview, ordered procedure, final volumes, and reference details. |
+| `templates/sections/` | Advisories, materials, preparation preview, ordered procedure, final volumes, and reference details. |
 | `templates/components/` | Reusable references, tables, headings, fields, detail cards, plate maps, inspector, and flow charts. |
 | `assets/` | Page and component styles, responsive and print rules, and interactive components. |
 | `render.py` | Configure Jinja, load packaged assets in a fixed order, and render the page. |
@@ -40,6 +40,8 @@ The maps represent logical row and column coordinates. They do not infer robot t
 `<lab-transfer-motion>` draws directional paths between the rendered wells and animates a schematic pipette, aspiration, and dispensing drops. A distribution connects its source and ordered destinations; mixing repeats its recorded cycles in place. Temperature operations have no pipette motion. The component measures the actual displayed well positions, redraws on resize or plate scrolling, and leaves a static route available while paused or in reduced-motion mode. The animation illustrates the selected operation; the numeric snapshot remains explicitly labeled as its after-state. It is independent of hardware choreography and duration: a target may refill the tip between destinations.
 
 For the Manual target, a distribution represents a separate measured aspiration and complete dispense for each destination. The animation returns to the source empty between wells and the flow profile uses the same alternating aspiration/dispense phases. The grouped procedure step and its total delivered volumes remain unchanged. This avoids depicting repeated partial strokes from a single large load with an ordinary manual micropipette.
+
+The Advisories section lists `Compilation.diagnostics` with links to the procedure steps and wells they name; it is omitted when there are none.
 
 The overview counts one fresh tip for each `Transfer`, `Distribute`, or `Mix`, matching the current target policy. A distribution reuses its tip across its destinations. The concentration-series recipe explicitly groups identical source/dose additions into distributions; the document renderer does not reorder operations.
 

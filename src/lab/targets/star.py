@@ -25,6 +25,7 @@ from lab.deck import (
 from lab.documents import describe
 from lab.equipment import CarrierModel, LabwareModel, TipRackModel
 from lab.labware import LabwareKind
+from lab.limits import PipettingLimits
 from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
     Binding,
@@ -395,6 +396,14 @@ class STAR:
                     if child.name not in {"trash", "trash96", "core_gripper", "teaching_rack"}
                 ),
                 f"{tip_index} fresh tips from {', '.join(rack.name for rack in self.tip_racks)}",
+            ),
+            limits=(
+                PipettingLimits(
+                    label=f"STAR channel {self.channel}",
+                    min_volume_ul=minimum,
+                    max_volume_ul=maximum,
+                    trusted_minimum_ul=minimum,
+                ),
             ),
         )
 

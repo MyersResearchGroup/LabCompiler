@@ -9,6 +9,7 @@ import lab.compiler as compiler
 from lab.documents.descriptions import describe
 from lab.documents.flow import build_flow_profile
 from lab.documents.models import (
+    AdvisoryRow,
     DetailFields,
     IncomingTransfer,
     LiquidClassView,
@@ -245,4 +246,18 @@ def build_worksheet(compilation: compiler.Compilation) -> Worksheet:
             _liquid_class(ref, spec, p.steps, target) for spec, ref in classes.items()
         ),
         preparation=build_preparation(compilation, tuple(resources)),
+        advisories=tuple(
+            AdvisoryRow(
+                diagnostic=diagnostic,
+                step_number=diagnostic.step_index + 1
+                if diagnostic.step_index is not None
+                else None,
+                locations=tuple(
+                    locations[location]
+                    for location in diagnostic.locations
+                    if location in locations
+                ),
+            )
+            for diagnostic in compilation.diagnostics
+        ),
     )

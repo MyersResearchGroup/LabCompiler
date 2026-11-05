@@ -19,6 +19,7 @@
         <div title="One fresh tip per transfer, distribution, or mix"><dt>Fresh tips</dt><dd>{{ document.tip_count }}</dd></div>
         <div><dt>Resources</dt><dd>{{ document.resources|length }}</dd></div>
         <div><dt>Output samples</dt><dd>{{ document.protocol.output_sample_ids|length }}</dd></div>
+        {% if document.advisories %}<div><dt>Advisories</dt><dd><a href="#advisories">{{ document.advisories|length }}</a></dd></div>{% endif %}
       </dl>
     </header>
     <nav aria-label="Document sections">
@@ -31,6 +32,7 @@
       <ul>{% for line in document.target.setup %}<li>{{ line }}</li>{% endfor %}</ul>
     </section>
     {% endif %}
+    {% include "sections/advisories.html" %}
     {% include "sections/materials.html" %}
     {% include "sections/preparation.html" %}
     {% include "sections/procedure.html" %}

@@ -8,8 +8,9 @@ from typing import Any, Literal
 
 from lab.deck import Container, Deck, DeckLayout, DeckSite, HolderSite, Slot
 from lab.documents import describe
-from lab.equipment import LabwareModel, ModuleModel, TipRackModel
+from lab.equipment import LabwareModel, ModuleModel, PipetteModel, TipRackModel
 from lab.labware import LabwareKind
+from lab.limits import OPENTRONS_LIMITS, PipettingLimits
 from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
     Binding,
@@ -48,8 +49,7 @@ class Labware:
 class _Pipette:
     model: str
     mount: str
-    minimum: Decimal
-    maximum: Decimal
+    limits: PipettingLimits
     tip_name: str
     racks: tuple[Labware, ...]
     variable: str
@@ -83,10 +83,18 @@ class Opentrons:
                 "Install lab-compiler[opentrons] to compile for Opentrons"
             ) from _sdk_import_error
 
-        models: dict[str, tuple[str, int, int, str]] = {
-            "p300_single_gen2": ("OT-2", 20, 300, "opentrons_96_tiprack_300ul"),
-            "p20_single_gen2": ("OT-2", 1, 20, "opentrons_96_tiprack_20ul"),
-            "flex_1channel_1000": ("Flex", 5, 1000, "opentrons_flex_96_tiprack_200ul"),
+        models: dict[str, tuple[str, PipetteModel, str]] = {
+            "p300_single_gen2": (
+                "OT-2",
+                PipetteModel.P300_SINGLE_GEN2,
+                "opentrons_96_tiprack_300ul",
+            ),
+            "p20_single_gen2": ("OT-2", PipetteModel.P20_SINGLE_GEN2, "opentrons_96_tiprack_20ul"),
+            "flex_1channel_1000": (
+                "Flex",
+                PipetteModel.FLEX_1CHANNEL_1000,
+                "opentrons_flex_96_tiprack_200ul",
+            ),
         }
         pipette_specs = [(self.pipette, self.mount, self.tip_racks, "pipette")]
         if self.small_pipette is not None:
@@ -108,18 +116,9 @@ class Opentrons:
                 )
             if mount not in ("left", "right"):
                 raise CompileError("Pipette mount must be left or right")
-            _, low, high, tip_name = models[model_name]
+            _, model, tip_name = models[model_name]
             loaded_pipettes.append(
-                _Pipette(
-                    model_name,
-                    mount,
-                    Decimal(low),
-                    Decimal(high),
-                    tip_name,
-                    racks,
-                    variable,
-                    [],
-                )
+                _Pipette(model_name, mount, OPENTRONS_LIMITS[model], tip_name, racks, variable, [])
             )
         if set(self.labware) != {resource.name for resource in protocol.resources}:
             raise CompileError("Labware bindings must match the protocol's resource names exactly")
@@ -250,14 +249,10 @@ class Opentrons:
         tip_indexes = dict.fromkeys((pipette.variable for pipette in loaded_pipettes), 0)
 
         def select_pipette(volume: Decimal) -> _Pipette:
-            fits = [
-                pipette
-                for pipette in loaded_pipettes
-                if pipette.minimum <= volume <= pipette.maximum
-            ]
+            fits = [pipette for pipette in loaded_pipettes if pipette.limits.covers(volume)]
             if not fits:
                 raise CompileError("Volume is outside the pipette/tip range")
-            return min(fits, key=lambda pipette: pipette.maximum)
+            return min(fits, key=lambda pipette: pipette.limits.max_volume_ul)
 
         for index, step in enumerate(protocol.steps):
             commands.append(f"context.comment({describe(step)!r})")
@@ -420,6 +415,7 @@ class Opentrons:
                 ),
                 f"{sum(tip_indexes.values())} fresh tips required",
             ),
+            limits=tuple(pipette.limits for pipette in loaded_pipettes),
         )
 
 

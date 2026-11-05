@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TypeAlias
 
+from lab.diagnostics import Diagnostic
 from lab.documents.flow import FlowProfile
 from lab.model import Fill, RecordedProtocol, Resource, TargetPlan
 from lab.samples import Location, Sample
@@ -123,6 +124,13 @@ class PreparationView:
 
 
 @dataclass(frozen=True)
+class AdvisoryRow:
+    diagnostic: Diagnostic
+    step_number: int | None
+    locations: tuple[Reference, ...]
+
+
+@dataclass(frozen=True)
 class Worksheet:
     protocol: RecordedProtocol
     target: TargetPlan
@@ -134,3 +142,4 @@ class Worksheet:
     procedure: tuple[ProcedureRow, ...]
     liquid_classes: tuple[LiquidClassView, ...]
     preparation: PreparationView
+    advisories: tuple[AdvisoryRow, ...] = ()

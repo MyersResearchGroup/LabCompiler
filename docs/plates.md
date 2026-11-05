@@ -190,6 +190,32 @@ target as the least concentrated stock whose `max_target` covers it. The recipe 
 vehicle fraction against vehicle carried by stocks, fills the remainder with medium, then
 inoculates and mixes. Every balance is checked; a negative one is a `ValueError` naming the well.
 
+## Advisories
+
+Hard limits stay errors: a volume no head can pipette or an overflowing well raises
+`CompileError`. Everything that compiles but deserves attention is a `Diagnostic` on
+`Compilation.diagnostics`, in `plan.json`, and in the worksheet's Advisories section:
+
+```python
+bundle = compile(p, to=None, warn_below=2 * uL, resolution=Decimal("0.1") * uL)
+for finding in bundle.diagnostics:
+    finding.severity, finding.code, finding.message, finding.locations, finding.step_index
+```
+
+Each target reports its heads as `lab.limits.PipettingLimits`: the vendor range plus the floor at
+which the lab trusts the head. The Opentrons P20 is trusted from 2 µL rather than its 1 µL
+minimum, the P300 across its range, the Flex 1000 from 50 µL; a STAR channel's declared minimum
+is its floor; the manual target assumes a conventional P2, P10, P20, P200, P1000 set
+(`Manual(pipettes=...)` replaces it). `warn_below` raises every floor to the lab's own value.
+A step below the floor of the smallest head that covers it, or outside every head, is a
+`volume-below-trusted-minimum` warning; `resolution` adds `volume-resolution` notes for volumes
+that cannot be dialed at that step.
+
+Before a protocol exists, `advise_design(design, stocks, limits, warn_below=...)` reports the
+direct dose each well would need from the given stock concentrations, the gradients
+(`serial-dilution-available`) and replicate groups (`premix-available`) that would avoid small
+doses. It is the design-time view that a layout tool shows while a plate is being edited.
+
 ## Format plugins
 
 Sheet formats are not core concepts. `lab.plugins.lmsf` reads and writes the LMSF destination

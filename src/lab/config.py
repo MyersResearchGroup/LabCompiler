@@ -149,3 +149,5 @@ class PreparationConfig(ConfigModel):
     serial_min_steps: Annotated[int, Field(strict=True, ge=2)] = 4
     premix_min_group: Annotated[int, Field(strict=True, ge=2)] | None = None
     premix_overage: Annotated[Decimal, Field(ge=1, allow_inf_nan=False)] = Decimal("1.1")
+    warn_below: Volume | None = None
+    resolution: Volume | None = None
