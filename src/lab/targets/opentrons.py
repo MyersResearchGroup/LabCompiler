@@ -13,19 +13,25 @@ from lab.labware import LabwareKind
 from lab.limits import OPENTRONS_LIMITS, PipettingLimits
 from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
+    LIQUID_STEPS,
     Binding,
     Distribute,
+    LiquidStep,
     ManualInstruction,
     Mix,
+    MultiMix,
     RecordedProtocol,
     SetTemperature,
     TargetPlan,
     Thermocycle,
     Transfer,
     Wait,
+    lanes,
 )
 from lab.samples import Location
+from lab.targets.lanes import column_stroke
 from lab.targets.liquid_handler import LiquidHandler
+from lab.tips import assign_tips
 from lab.units import number
 from lab.validation import CompileError, step_error, volume_trace
 
@@ -58,7 +64,13 @@ class _Pipette:
 
 @dataclass
 class Opentrons:
-    """Bind logical resources to explicit labware and one or two single-channel pipettes."""
+    """Bind logical resources to explicit labware and one or two pipettes.
+
+    Single-channel heads run every lane of a step in turn. An 8-channel head runs a lane set
+    that fills rows A–H of one column in one stroke, drawing from a matching column or one
+    trough well; other lane sets fall back to a single-channel head. Tips follow the
+    protocol's recorded ``TipPolicy``.
+    """
 
     robot: Literal["OT-2", "Flex"]
     labware: dict[str, Labware]
@@ -90,10 +102,22 @@ class Opentrons:
                 "opentrons_96_tiprack_300ul",
             ),
             "p20_single_gen2": ("OT-2", PipetteModel.P20_SINGLE_GEN2, "opentrons_96_tiprack_20ul"),
+            "p300_multi_gen2": ("OT-2", PipetteModel.P300_MULTI_GEN2, "opentrons_96_tiprack_300ul"),
+            "p20_multi_gen2": ("OT-2", PipetteModel.P20_MULTI_GEN2, "opentrons_96_tiprack_20ul"),
             "flex_1channel_1000": (
                 "Flex",
                 PipetteModel.FLEX_1CHANNEL_1000,
                 "opentrons_flex_96_tiprack_200ul",
+            ),
+            "flex_8channel_50": (
+                "Flex",
+                PipetteModel.FLEX_8CHANNEL_50,
+                "opentrons_flex_96_tiprack_50ul",
+            ),
+            "flex_8channel_1000": (
+                "Flex",
+                PipetteModel.FLEX_8CHANNEL_1000,
+                "opentrons_flex_96_tiprack_1000ul",
             ),
         }
         pipette_specs = [(self.pipette, self.mount, self.tip_racks, "pipette")]
@@ -111,8 +135,10 @@ class Opentrons:
         for model_name, mount, racks, variable in pipette_specs:
             if model_name not in models or models[model_name][0] != self.robot:
                 raise CompileError(
-                    "Supported pipettes: OT-2 P20 single GEN2, OT-2 P300 single GEN2, "
-                    "and Flex 1-channel 1000"
+                    f"Supported {self.robot} pipettes: "
+                    + ", ".join(
+                        name for name, (robot, _, _) in models.items() if robot == self.robot
+                    )
                 )
             if mount not in ("left", "right"):
                 raise CompileError("Pipette mount must be left or right")
@@ -226,7 +252,13 @@ class Opentrons:
                     raise CompileError(f"{pipette.model} requires {pipette.tip_name}")
                 definition, variable = place(rack, tips=True)
                 rack_variables.append(variable)
-                names = rack.wells or tuple(w for column in definition["ordering"] for w in column)
+                if rack.wells:
+                    names = rack.wells
+                elif pipette.limits.channels > 1:
+                    # A multichannel head picks up a whole column; address it by its top tip.
+                    names = tuple(column[0] for column in definition["ordering"])
+                else:
+                    names = tuple(w for column in definition["ordering"] for w in column)
                 if len(set(names)) != len(names):
                     raise CompileError("A tip position may only be supplied once")
                 for name in names:
@@ -246,64 +278,158 @@ class Opentrons:
             setup.insert(0, f"context.load_trash_bin({self.trash_slot!r})")
         commands = []
         volumes = volume_trace(protocol, tuple(bindings))
+        resources = {resource.name: resource for resource in protocol.resources}
+        assignment = assign_tips(protocol)
         tip_indexes = dict.fromkeys((pipette.variable for pipette in loaded_pipettes), 0)
+        picked_up = 0
+        held: tuple[_Pipette, int] | None = None
 
-        def select_pipette(volume: Decimal) -> _Pipette:
-            fits = [pipette for pipette in loaded_pipettes if pipette.limits.covers(volume)]
+        def select_pipette(volume: Decimal, channels: int) -> _Pipette:
+            fits = [
+                pipette
+                for pipette in loaded_pipettes
+                if pipette.limits.covers(volume) and pipette.limits.channels == channels
+            ]
             if not fits:
-                raise CompileError("Volume is outside the pipette/tip range")
+                raise CompileError(
+                    "Volume is outside the pipette/tip range"
+                    if channels == 1
+                    else f"No {channels}-channel pipette covers this volume"
+                )
             return min(fits, key=lambda pipette: pipette.limits.max_volume_ul)
+
+        def drop() -> None:
+            nonlocal held
+            if held is not None:
+                commands.append(f"{held[0].variable}.drop_tip()")
+                held = None
+
+        def hold(pipette: _Pipette, number: int, volume: Decimal) -> None:
+            """Keep the current tip when the policy allows it, otherwise take a fresh one."""
+            nonlocal held, picked_up
+            if held is not None and held == (pipette, number):
+                return
+            drop()
+            tip_index = tip_indexes[pipette.variable]
+            if tip_index >= len(pipette.tips):
+                raise CompileError("Not enough fresh tips")
+            tip, tip_capacity = pipette.tips[tip_index]
+            tip_indexes[pipette.variable] = tip_index + 1
+            if volume > tip_capacity:
+                raise CompileError("Volume is outside the pipette/tip range")
+            commands.append(f"{pipette.variable}.pick_up_tip({tip})")
+            picked_up += pipette.limits.channels
+            held = (pipette, number)
+
+        def with_rates(step: LiquidStep, pipette: _Pipette, operation: list[str]) -> None:
+            tool = pipette.variable
+            if isinstance(step.liquid_class, LiquidClass):
+                spec = step.liquid_class
+                commands.extend(
+                    (
+                        f"previous_rates = ({tool}.flow_rate.aspirate, {tool}.flow_rate.dispense)",
+                        f"{tool}.flow_rate.aspirate = {number(spec.aspiration_flow_rate_ul_s)}",
+                        f"{tool}.flow_rate.dispense = {number(spec.dispense_flow_rate_ul_s)}",
+                    )
+                )
+            commands.extend(operation)
+            if isinstance(step.liquid_class, LiquidClass):
+                commands.append(
+                    f"{tool}.flow_rate.aspirate, {tool}.flow_rate.dispense = previous_rates"
+                )
 
         for index, step in enumerate(protocol.steps):
             commands.append(f"context.comment({describe(step)!r})")
-            if isinstance(step, (Transfer, Mix, Distribute)):
+            if isinstance(step, LIQUID_STEPS):
                 if isinstance(step.liquid_class, HamiltonLiquidClass):
                     raise step_error(index, step, "Hamilton liquid classes require the STAR target")
+                number_of_tip = assignment[index]
+                assert number_of_tip is not None
+                amount = number(step.volume)
                 try:
-                    pipette = select_pipette(step.volume)
+                    stroke = column_stroke(step, resources)
+                    multi = (
+                        select_pipette(step.volume, stroke.width)
+                        if stroke is not None
+                        and any(p.limits.channels == stroke.width for p in loaded_pipettes)
+                        else None
+                    )
+                    if multi is not None and stroke is not None:
+                        # One multichannel stroke addressed by the top well of each column.
+                        hold(multi, number_of_tip, step.volume)
+                        tool = multi.variable
+                        if isinstance(step, MultiMix):
+                            operation = [
+                                f"{tool}.mix({step.cycles}, {amount}, {refs[stroke.source_top]})"
+                            ]
+                        else:
+                            assert stroke.destination_top is not None
+                            operation = [
+                                f"{tool}.aspirate({amount}, {refs[stroke.source_top]})",
+                                f"{tool}.dispense({amount}, {refs[stroke.destination_top]})",
+                            ]
+                        with_rates(step, multi, operation)
+                        continue
+                    pipette = select_pipette(step.volume, 1)
+                    tool = pipette.variable
+                    if isinstance(step, Transfer):
+                        hold(pipette, number_of_tip, step.volume)
+                        with_rates(
+                            step,
+                            pipette,
+                            [
+                                f"{tool}.aspirate({amount}, {refs[step.source]})",
+                                f"{tool}.dispense({amount}, {refs[step.destination]})",
+                            ],
+                        )
+                    elif isinstance(step, Distribute):
+                        hold(pipette, number_of_tip, step.volume)
+                        destinations = ", ".join(refs[d] for d in step.destinations)
+                        gap = (
+                            f", air_gap={number(step.air_gap)}" if step.air_gap is not None else ""
+                        )
+                        with_rates(
+                            step,
+                            pipette,
+                            [
+                                f"{tool}.distribute({amount}, {refs[step.source]}, "
+                                f"[{destinations}], "
+                                f"disposal_volume=0, new_tip='never'{gap})"
+                            ],
+                        )
+                    elif isinstance(step, Mix):
+                        hold(pipette, number_of_tip, step.volume)
+                        with_rates(
+                            step,
+                            pipette,
+                            [f"{tool}.mix({step.cycles}, {amount}, {refs[step.location]})"],
+                        )
+                    else:
+                        # Lanes a single-channel head runs in turn. One shared source keeps
+                        # one tip; distinct sources take a fresh tip per lane.
+                        pairs = lanes(step)
+                        shared = len({source for source, _ in pairs}) == 1
+                        for lane_index, (lane_source, lane_destination) in enumerate(pairs):
+                            if lane_index and not shared:
+                                drop()
+                            hold(pipette, number_of_tip, step.volume)
+                            if isinstance(step, MultiMix):
+                                operation = [
+                                    f"{tool}.mix({step.cycles}, {amount}, {refs[lane_source]})"
+                                ]
+                            else:
+                                assert lane_destination is not None
+                                operation = [
+                                    f"{tool}.aspirate({amount}, {refs[lane_source]})",
+                                    f"{tool}.dispense({amount}, {refs[lane_destination]})",
+                                ]
+                            with_rates(step, pipette, operation)
+                            if not shared and lane_index < len(pairs) - 1:
+                                drop()
                 except CompileError as exc:
                     raise step_error(index, step, str(exc)) from exc
-                tip_index = tip_indexes[pipette.variable]
-                if tip_index >= len(pipette.tips):
-                    raise step_error(index, step, "Not enough fresh tips")
-                tip, tip_capacity = pipette.tips[tip_index]
-                tip_indexes[pipette.variable] = tip_index + 1
-                if step.volume > tip_capacity:
-                    raise step_error(index, step, "Volume is outside the pipette/tip range")
-                tool = pipette.variable
-                if isinstance(step.liquid_class, LiquidClass):
-                    spec = step.liquid_class
-                    commands.extend(
-                        (
-                            f"previous_rates = ({tool}.flow_rate.aspirate, "
-                            f"{tool}.flow_rate.dispense)",
-                            f"{tool}.flow_rate.aspirate = {number(spec.aspiration_flow_rate_ul_s)}",
-                            f"{tool}.flow_rate.dispense = {number(spec.dispense_flow_rate_ul_s)}",
-                        )
-                    )
-                commands.append(f"{tool}.pick_up_tip({tip})")
-                amount = number(step.volume)
-                if isinstance(step, Transfer):
-                    commands.extend(
-                        (
-                            f"{tool}.aspirate({amount}, {refs[step.source]})",
-                            f"{tool}.dispense({amount}, {refs[step.destination]})",
-                        )
-                    )
-                elif isinstance(step, Distribute):
-                    destinations = ", ".join(refs[destination] for destination in step.destinations)
-                    gap = f", air_gap={number(step.air_gap)}" if step.air_gap is not None else ""
-                    commands.append(
-                        f"{tool}.distribute({amount}, {refs[step.source]}, [{destinations}], "
-                        f"disposal_volume=0, new_tip='never'{gap})"
-                    )
-                else:
-                    commands.append(f"{tool}.mix({step.cycles}, {amount}, {refs[step.location]})")
-                commands.append(f"{tool}.drop_tip()")
-                if isinstance(step.liquid_class, LiquidClass):
-                    commands.append(
-                        f"{tool}.flow_rate.aspirate, {tool}.flow_rate.dispense = previous_rates"
-                    )
+                if protocol.tip_policy.value == "fresh_per_step":
+                    drop()
             elif isinstance(step, SetTemperature):
                 module = temperature_of.get(step.resource)
                 if module is None:
@@ -381,8 +507,9 @@ class Opentrons:
                 commands.append(f"context.pause({step.text!r})")
             else:
                 raise step_error(index, step, "Unsupported step")
+        drop()
         source = (
-            '"""Generated by Lab. Each liquid operation uses a fresh tip."""\n\n'
+            f'"""Generated by Lab. Tip policy: {protocol.tip_policy.value}."""\n\n'
             "from opentrons import protocol_api\n\n"
             f"metadata = {{'protocolName': {protocol.name!r}, 'author': 'Lab'}}\n"
             f"requirements = {{'robotType': {self.robot!r}, 'apiLevel': '2.21'}}\n\n"
@@ -394,7 +521,7 @@ class Opentrons:
             **asdict(self),
             "api_level": "2.21",
             "sdk_version": version("opentrons"),
-            "tip_policy": "fresh tip per transfer or mix",
+            "tip_policy": protocol.tip_policy.value,
         }
         return TargetPlan(
             self.robot,
@@ -413,7 +540,7 @@ class Opentrons:
                     if self.robot == "Flex"
                     else ("Fixed trash in slot 12",)
                 ),
-                f"{sum(tip_indexes.values())} fresh tips required",
+                f"{picked_up} fresh tips required",
             ),
             limits=tuple(pipette.limits for pipette in loaded_pipettes),
         )
@@ -555,7 +682,9 @@ _LAYOUT_LABWARE = {
 _LAYOUT_TIPS = {
     TipRackModel.OPENTRONS_20_UL: "opentrons_96_tiprack_20ul",
     TipRackModel.OPENTRONS_300_UL: "opentrons_96_tiprack_300ul",
+    TipRackModel.FLEX_50_UL: "opentrons_flex_96_tiprack_50ul",
     TipRackModel.FLEX_200_UL: "opentrons_flex_96_tiprack_200ul",
+    TipRackModel.FLEX_1000_UL: "opentrons_flex_96_tiprack_1000ul",
 }
 
 

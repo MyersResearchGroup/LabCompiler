@@ -17,11 +17,25 @@ class Origin:
     line: int
 
 
+class TipPolicy(Enum):
+    """When a liquid-handling tip is replaced."""
+
+    FRESH_PER_STEP = "fresh_per_step"
+    """A new tip for every transfer, distribution, or mix."""
+    REUSE_PER_SOURCE = "reuse_per_source"
+    """Keep a tip while consecutive steps draw from the same source with the same class."""
+    REUSE_WHEN_CONTAINED = "reuse_when_contained"
+    """Keep a tip while every destination already contains only what the source contains."""
+
+
 @dataclass(frozen=True)
 class Fill:
+    """Initial contents of a well. ``components`` names what the material is made of."""
+
     well: str
     material: str
     volume: Decimal
+    components: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,8 +78,34 @@ class Distribute:
 
 
 @dataclass(frozen=True)
+class MultiTransfer:
+    """Equal-volume lanes moved together; lane ``i`` goes ``sources[i]`` to ``destinations[i]``.
+
+    Sources may repeat, as when one trough feeds a column. A head with enough channels runs
+    the lanes in one stroke; otherwise a target runs them one after another.
+    """
+
+    sources: tuple[Location, ...]
+    destinations: tuple[Location, ...]
+    volume: Decimal
+    origin: Origin
+    liquid_class: LiquidClassSpec | None = None
+
+
+@dataclass(frozen=True)
 class Mix:
     location: Location
+    volume: Decimal
+    cycles: int
+    origin: Origin
+    liquid_class: LiquidClassSpec | None = None
+
+
+@dataclass(frozen=True)
+class MultiMix:
+    """The same mixing cycles at several wells together."""
+
+    locations: tuple[Location, ...]
     volume: Decimal
     cycles: int
     origin: Origin
@@ -109,7 +149,32 @@ class ManualInstruction:
     origin: Origin
 
 
-Step = Transfer | Distribute | Mix | Wait | Thermocycle | SetTemperature | ManualInstruction
+Step = (
+    Transfer
+    | Distribute
+    | MultiTransfer
+    | Mix
+    | MultiMix
+    | Wait
+    | Thermocycle
+    | SetTemperature
+    | ManualInstruction
+)
+LiquidStep = Transfer | Distribute | MultiTransfer | Mix | MultiMix
+LIQUID_STEPS = (Transfer, Distribute, MultiTransfer, Mix, MultiMix)
+
+
+def lanes(step: LiquidStep) -> tuple[tuple[Location, Location | None], ...]:
+    """(source, destination) per lane; a mix has no destination, a distribution one source."""
+    if isinstance(step, Transfer):
+        return ((step.source, step.destination),)
+    if isinstance(step, Distribute):
+        return tuple((step.source, destination) for destination in step.destinations)
+    if isinstance(step, MultiTransfer):
+        return tuple(zip(step.sources, step.destinations, strict=True))
+    if isinstance(step, Mix):
+        return ((step.location, None),)
+    return tuple((location, None) for location in step.locations)
 
 
 @dataclass(frozen=True)
@@ -122,6 +187,7 @@ class RecordedProtocol:
     placements: tuple[SamplePlacement, ...] = ()
     input_sample_ids: tuple[str, ...] = ()
     output_sample_ids: tuple[str, ...] = ()
+    tip_policy: TipPolicy = TipPolicy.FRESH_PER_STEP
 
     def output_manifest(self) -> OutputManifest:
         """Project declared outputs from this snapshot using logical locations."""
@@ -171,7 +237,9 @@ def encode(value: Any) -> Any:
         (
             Transfer,
             Distribute,
+            MultiTransfer,
             Mix,
+            MultiMix,
             Wait,
             Thermocycle,
             SetTemperature,

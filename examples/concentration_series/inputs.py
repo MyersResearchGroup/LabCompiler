@@ -196,13 +196,28 @@ def sources(p: Protocol, config: ProtocolConfig, classes: dict[str, LiquidClassS
     media = p.plate(
         "medium", shape=(1, 2), capacity=15000 * uL, dead_volume=config.medium.dead_volume
     )
-    p.load(media["A1"], config.medium.name, volume=config.medium.volume)
+    p.load(
+        media["A1"],
+        config.medium.name,
+        volume=config.medium.volume,
+        components=(config.medium.name,),
+    )
     diluent = None
     if config.medium.diluent_volume is not None:
-        p.load(media["A2"], config.medium.name, volume=config.medium.diluent_volume)
+        p.load(
+            media["A2"],
+            config.medium.name,
+            volume=config.medium.diluent_volume,
+            components=(config.medium.name,),
+        )
         diluent = media["A2"]
     waste = p.container("waste", capacity=15000 * uL)
-    p.load(reagents[config.vehicle.well], config.vehicle.name, volume=config.vehicle.volume)
+    p.load(
+        reagents[config.vehicle.well],
+        config.vehicle.name,
+        volume=config.vehicle.volume,
+        components=(config.vehicle.name,),
+    )
     stocks = []
     for stock in config.stocks:
         p.load(
@@ -210,6 +225,9 @@ def sources(p: Protocol, config: ProtocolConfig, classes: dict[str, LiquidClassS
             f"{stock.solute}: {stock.concentration}; "
             f"{config.vehicle.name} {stock.vehicle_fraction} v/v",
             volume=stock.volume,
+            components=(stock.solute, config.vehicle.name)
+            if stock.vehicle_fraction
+            else (stock.solute, config.medium.name),
         )
         stocks.append(
             Stock(
@@ -225,7 +243,12 @@ def sources(p: Protocol, config: ProtocolConfig, classes: dict[str, LiquidClassS
     culture_wells: dict[str, CultureConfig] = {}
     for culture in config.cultures:
         material = material_name(culture.strain, culture.plasmid)
-        p.load(reagents[culture.well], material, volume=culture.volume)
+        p.load(
+            reagents[culture.well],
+            material,
+            volume=culture.volume,
+            components=(config.medium.name, material),
+        )
         inocula[material] = reagents[culture.well]
         culture_wells[material] = culture
     return Sources(

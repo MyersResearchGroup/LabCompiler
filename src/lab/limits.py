@@ -51,6 +51,10 @@ OPENTRONS_LIMITS: dict[PipetteModel, PipettingLimits] = {
     PipetteModel.P20_SINGLE_GEN2: _limits("P20 single GEN2", "1", "20", "2"),
     PipetteModel.P300_SINGLE_GEN2: _limits("P300 single GEN2", "20", "300", "20"),
     PipetteModel.FLEX_1CHANNEL_1000: _limits("Flex 1-channel 1000", "5", "1000", "50"),
+    PipetteModel.P20_MULTI_GEN2: _limits("P20 8-channel GEN2", "1", "20", "2", channels=8),
+    PipetteModel.P300_MULTI_GEN2: _limits("P300 8-channel GEN2", "20", "300", "20", channels=8),
+    PipetteModel.FLEX_8CHANNEL_50: _limits("Flex 8-channel 50", "1", "50", "5", channels=8),
+    PipetteModel.FLEX_8CHANNEL_1000: _limits("Flex 8-channel 1000", "5", "1000", "50", channels=8),
 }
 """Vendor ranges for the supported Opentrons heads.
 
@@ -64,8 +68,10 @@ MANUAL_LIMITS: tuple[PipettingLimits, ...] = (
     _limits("P20", "2", "20", "2"),
     _limits("P200", "20", "200", "20"),
     _limits("P1000", "100", "1000", "100"),
+    _limits("8-channel P20", "2", "20", "2", channels=8),
+    _limits("8-channel P200", "20", "200", "20", channels=8),
 )
-"""A conventional set of adjustable manual micropipettes."""
+"""A conventional bench set: single-channel P2 to P1000 and 8-channel P20 and P200."""
 
 
 def channel_limits(channel: Channel) -> PipettingLimits:

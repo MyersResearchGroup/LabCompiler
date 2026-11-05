@@ -2,6 +2,7 @@
 
 from examples.concentration_series.inputs import ProtocolConfig, liquid_classes, sources
 from lab import Protocol, uL
+from lab.model import TipPolicy
 from lab.plates import AssemblyReport, PlateDesign, assemble
 from lab.samples import Sample
 
@@ -15,6 +16,7 @@ def protocol(design: PlateDesign, config: ProtocolConfig) -> tuple[Protocol, Ass
         f"at {config.final_volume:~P} each. "
         "Concentrations refer to final volume after inoculation.\n\n"
         f"Protocol configuration: {config.model_dump_json(indent=2)}",
+        tip_policy=TipPolicy(config.preparation.tip_policy),
     )
     supplied = sources(p, config, classes)
 

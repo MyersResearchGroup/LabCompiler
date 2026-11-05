@@ -64,6 +64,7 @@ class ProcedureRow:
     volume_note: str = ""
     source: Reference | None = None
     destinations: tuple[Reference, ...] = ()
+    sources: tuple[Reference, ...] = ()
     liquid_class: Reference | None = None
     air_gap: Decimal | None = None
 
@@ -107,6 +108,8 @@ class PlateMapView:
 
 @dataclass(frozen=True)
 class PreparationFrame:
+    """The state after one operation. ``sources`` pairs with ``destinations`` when ``lanes``."""
+
     number: int
     description: str
     source: str | None
@@ -115,6 +118,8 @@ class PreparationFrame:
     volumes: tuple[WellVolume, ...]
     mix_cycles: int = 0
     refill_between_destinations: bool = False
+    sources: tuple[str, ...] = ()
+    lanes: bool = False
 
 
 @dataclass(frozen=True)

@@ -21,8 +21,19 @@ from lab.documents.models import (
 )
 from lab.documents.preparation import build_preparation
 from lab.liquid_classes import LiquidClass, LiquidClassSpec
-from lab.model import Distribute, Mix, Step, TargetPlan, Transfer
+from lab.model import (
+    LIQUID_STEPS,
+    Distribute,
+    Mix,
+    MultiMix,
+    MultiTransfer,
+    Step,
+    TargetPlan,
+    Transfer,
+    lanes,
+)
 from lab.samples import Location
+from lab.tips import tip_count
 from lab.units import number
 
 
@@ -33,14 +44,21 @@ def _procedure_row(
     classes: dict[LiquidClassSpec, Reference],
 ) -> ProcedureRow:
     destinations: tuple[Location, ...]
-    if not isinstance(step, (Transfer, Distribute, Mix)):
+    sources: tuple[Location, ...] = ()
+    if not isinstance(step, LIQUID_STEPS):
         return ProcedureRow(index, type(step).__name__, instruction=describe(step))
     if isinstance(step, Mix):
         source, destinations = step.location, ()
         note = f"{step.cycles} cycles"
+    elif isinstance(step, MultiMix):
+        source, destinations, sources = step.locations[0], (), step.locations
+        note = f"{step.cycles} cycles at {len(step.locations)} wells together"
     elif isinstance(step, Distribute):
         source, destinations = step.source, step.destinations
         note = "per destination"
+    elif isinstance(step, MultiTransfer):
+        source, destinations, sources = step.sources[0], step.destinations, step.sources
+        note = f"per lane, {len(destinations)} lanes together"
     else:
         source, destinations = step.source, (step.destination,)
         note = ""
@@ -51,6 +69,7 @@ def _procedure_row(
         volume_note=note,
         source=locations[source],
         destinations=tuple(locations[well] for well in destinations),
+        sources=tuple(locations[well] for well in sources),
         liquid_class=classes.get(step.liquid_class) if step.liquid_class else None,
         air_gap=step.air_gap if isinstance(step, Distribute) else None,
     )
@@ -114,7 +133,7 @@ def _liquid_class(
                 index, step, *rates, refill_between_destinations=target.name == "Manual"
             )
             for index, step in enumerate(steps, 1)
-            if isinstance(step, (Transfer, Distribute, Mix)) and step.liquid_class == spec
+            if isinstance(step, LIQUID_STEPS) and step.liquid_class == spec
         )
         if rates is not None
         else ()
@@ -132,16 +151,17 @@ def build_worksheet(compilation: compiler.Compilation) -> Worksheet:
     samples = {sample.id: sample for sample in p.samples}
     placed = {placement.location: samples[placement.sample_id] for placement in p.placements}
     used = set(fills) | set(placed)
-    incoming: dict[Location, list[tuple[int, Transfer | Distribute]]] = {}
+    incoming: dict[Location, list[tuple[int, Location, Transfer | Distribute | MultiTransfer]]]
+    incoming = {}
     for index, step in enumerate(p.steps, 1):
-        if isinstance(step, (Transfer, Distribute)):
-            destinations = (step.destination,) if isinstance(step, Transfer) else step.destinations
-            used.add(step.source)
-            used.update(destinations)
-            for destination in destinations:
-                incoming.setdefault(destination, []).append((index, step))
-        elif isinstance(step, Mix):
-            used.add(step.location)
+        if isinstance(step, LIQUID_STEPS):
+            for source, destination in lanes(step):
+                used.add(source)
+                if destination is not None and isinstance(
+                    step, (Transfer, Distribute, MultiTransfer)
+                ):
+                    used.add(destination)
+                    incoming.setdefault(destination, []).append((index, source, step))
     locations = {
         location: Reference(f"location-{index}", str(location))
         for index, location in enumerate(
@@ -156,7 +176,7 @@ def build_worksheet(compilation: compiler.Compilation) -> Worksheet:
             dict.fromkeys(
                 step.liquid_class
                 for step in p.steps
-                if isinstance(step, (Transfer, Distribute, Mix)) and step.liquid_class is not None
+                if isinstance(step, LIQUID_STEPS) and step.liquid_class is not None
             ),
             1,
         )
@@ -200,8 +220,8 @@ def build_worksheet(compilation: compiler.Compilation) -> Worksheet:
                     if sample and sample.id in p.output_sample_ids
                     else "Declared sample",
                     incoming=tuple(
-                        IncomingTransfer(i, locations[step.source], step.volume)
-                        for i, step in incoming.get(location, ())
+                        IncomingTransfer(i, locations[source], step.volume)
+                        for i, source, step in incoming.get(location, ())
                     ),
                 )
             )
@@ -235,7 +255,7 @@ def build_worksheet(compilation: compiler.Compilation) -> Worksheet:
         protocol=p,
         target=target,
         digest=compilation.digest,
-        tip_count=sum(isinstance(step, (Transfer, Distribute, Mix)) for step in p.steps),
+        tip_count=tip_count(p),
         summary=summary,
         notes=notes,
         resources=tuple(resources),

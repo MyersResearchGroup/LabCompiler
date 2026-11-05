@@ -16,7 +16,7 @@
       <dl class="overview">
         <div><dt>Target</dt><dd>{{ document.target.name }}</dd></div>
         <div><dt>Operations</dt><dd>{{ document.procedure|length }}</dd></div>
-        <div title="One fresh tip per transfer, distribution, or mix"><dt>Fresh tips</dt><dd>{{ document.tip_count }}</dd></div>
+        <div title="Tips under the recorded tip policy: {{ document.protocol.tip_policy.value }}"><dt>Tips</dt><dd>{{ document.tip_count }}</dd></div>
         <div><dt>Resources</dt><dd>{{ document.resources|length }}</dd></div>
         <div><dt>Output samples</dt><dd>{{ document.protocol.output_sample_ids|length }}</dd></div>
         {% if document.advisories %}<div><dt>Advisories</dt><dd><a href="#advisories">{{ document.advisories|length }}</a></dd></div>{% endif %}

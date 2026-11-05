@@ -12,6 +12,7 @@ from decimal import Decimal
 from enum import Enum
 
 from lab.liquid_classes import LiquidClassSpec
+from lab.model import TipPolicy
 from lab.plates.design import Axis, PlateDesign, WellTarget, canonical_concentration
 from lab.plates.dilution import SerialDilutionPlan, plan_serial_dilution, record_serial_dilution
 from lab.plates.patterns import (
@@ -22,6 +23,7 @@ from lab.plates.patterns import (
 )
 from lab.plates.premix import PremixPlan, plan_premix, record_premix
 from lab.protocol import Plate, Protocol, Well
+from lab.tips import prewet
 from lab.units import Quantity, dilution_volume, magnitude, uL, units
 
 
@@ -192,11 +194,17 @@ def _add_grouped(
     doses: Sequence[tuple[Well, Decimal]],
     liquid_class: LiquidClassSpec | None,
 ) -> None:
-    """Share a tip across equal doses; retain individual transfers for unique doses."""
+    """Share a tip across equal doses; retain individual transfers for unique doses.
+
+    Under a tip-reuse policy the first move from a source follows a pre-wetting stroke of the
+    largest dose, so every reused tip starts wet.
+    """
     groups: dict[Decimal, list[Well]] = {}
     for destination, dose in doses:
         if dose:
             groups.setdefault(dose, []).append(destination)
+    if groups and p.tip_policy is not TipPolicy.FRESH_PER_STEP:
+        prewet(p, source, volume=max(groups) * uL, liquid_class=liquid_class)
     for dose, wells in groups.items():
         if len(wells) == 1:
             p.transfer(source, wells[0], volume=dose * uL, liquid_class=liquid_class)

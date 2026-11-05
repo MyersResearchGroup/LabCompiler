@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from lab.model import Distribute, Mix, Transfer
+from lab.model import Distribute, LiquidStep, Mix, MultiMix, MultiTransfer
 from lab.units import number
 
 
@@ -38,7 +38,7 @@ class FlowProfile:
 
 def build_flow_profile(
     index: int,
-    step: Transfer | Distribute | Mix,
+    step: LiquidStep,
     aspiration: Decimal,
     dispense: Decimal,
     *,
@@ -46,9 +46,14 @@ def build_flow_profile(
 ) -> FlowProfile:
     """Calculate nominal V/Q phases; no HTML, ramps, or device delays."""
     label = f"Step {index} · {type(step).__name__} · {number(step.volume)} µL"
-    if isinstance(step, Mix):
+    if isinstance(step, (Mix, MultiMix)):
         phases = [(step.volume, aspiration), (step.volume, -dispense)] * step.cycles
         label += f" × {step.cycles} cycles"
+        if isinstance(step, MultiMix):
+            label += f" × {len(step.locations)} wells together"
+    elif isinstance(step, MultiTransfer):
+        phases = [(step.volume, aspiration), (step.volume, -dispense)]
+        label += f" × {len(step.destinations)} lanes together"
     elif isinstance(step, Distribute):
         if refill_between_destinations:
             phases = [(step.volume, aspiration), (step.volume, -dispense)] * len(step.destinations)

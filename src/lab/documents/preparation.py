@@ -12,7 +12,15 @@ from lab.documents.models import (
     ResourceView,
     WellVolume,
 )
-from lab.model import Distribute, Mix, SetTemperature, Thermocycle, Transfer
+from lab.model import (
+    Distribute,
+    Mix,
+    MultiMix,
+    MultiTransfer,
+    SetTemperature,
+    Thermocycle,
+    Transfer,
+)
 from lab.samples import Location
 from lab.units import number
 from lab.validation import volume_trace
@@ -33,9 +41,11 @@ def build_preparation(
     for index, volumes in enumerate(trace):
         source = None
         destinations: tuple[str, ...] = ()
+        sources: tuple[str, ...] = ()
         active: tuple[str, ...] = ()
         mix_cycles = 0
         refill_between_destinations = False
+        lanes = False
         description = (
             "Before the first operation. Inspect a well to review its inputs and sample details."
         )
@@ -52,8 +62,18 @@ def build_preparation(
                         f" For each destination, aspirate a fresh {number(step.volume)} µL "
                         "from the source and dispense it completely."
                     )
+            elif isinstance(step, MultiTransfer):
+                sources = tuple(wells[location].reference.anchor for location in step.sources)
+                source = sources[0]
+                destinations = tuple(
+                    wells[location].reference.anchor for location in step.destinations
+                )
+                lanes = True
             elif isinstance(step, Mix):
                 active = (wells[step.location].reference.anchor,)
+                mix_cycles = step.cycles
+            elif isinstance(step, MultiMix):
+                active = tuple(wells[location].reference.anchor for location in step.locations)
                 mix_cycles = step.cycles
             elif isinstance(step, (Thermocycle, SetTemperature)):
                 active = tuple(
@@ -70,6 +90,8 @@ def build_preparation(
                 active=active,
                 mix_cycles=mix_cycles,
                 refill_between_destinations=refill_between_destinations,
+                sources=sources if sources else ((source,) if source else ()),
+                lanes=lanes,
                 volumes=tuple(
                     WellVolume(
                         well.reference.anchor,

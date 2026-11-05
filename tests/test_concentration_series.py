@@ -20,7 +20,7 @@ from lab import CompileError, HamiltonLiquidClass, LiquidClass, compile, uL
 from lab.config import PortableLiquidClassConfig
 from lab.deck import Deck, HolderSite, Rail, Slot
 from lab.equipment import LiquidHandler
-from lab.model import Distribute, Mix, Transfer
+from lab.model import LIQUID_STEPS, Distribute, Mix, MultiMix, MultiTransfer, Transfer, lanes
 from lab.plugins.lmsf import Condition, read_layout
 from lab.samples import Location
 
@@ -58,19 +58,17 @@ def protocol(strategy: str | None = None):
 
 
 def delivered_transfers(steps):
-    """Expand distributions to compare per-well doses independently of batching."""
+    """Expand distributions and lane sets to compare per-well doses independently of batching."""
     return [
-        Transfer(step.source, destination, step.volume, step.origin, step.liquid_class)
+        Transfer(source, destination, step.volume, step.origin, step.liquid_class)
         for step in steps
-        if isinstance(step, (Transfer, Distribute))
-        for destination in (
-            (step.destination,) if isinstance(step, Transfer) else step.destinations
-        )
+        if isinstance(step, (Transfer, Distribute, MultiTransfer))
+        for source, destination in lanes(step)
     ]
 
 
 def liquid_steps(steps):
-    return [step for step in steps if isinstance(step, (Transfer, Distribute, Mix))]
+    return [step for step in steps if isinstance(step, LIQUID_STEPS)]
 
 
 try:
@@ -206,12 +204,13 @@ def test_auto_strategy_builds_the_van_gradients_as_serial_dilutions():
     chain = [
         s
         for s in bundle.protocol.steps
-        if isinstance(s, Transfer) and s.source.resource == "cultures"
+        if isinstance(s, MultiTransfer) and s.sources[0].resource == "cultures"
     ]
-    assert len(chain) == 8 * 4 + 5 * 4
+    assert len(chain) == 8 + 5 and all(len(s.destinations) == 4 for s in chain)
     assert {s.volume for s in chain} == {Decimal(100)}
+    assert sum(isinstance(s, MultiMix) for s in bundle.protocol.steps) == 8 + 5
     assert all(s.liquid_class is not None for s in bundle.protocol.steps)
-    assert len(bundle.protocol.steps) == 420
+    assert len(bundle.protocol.steps) == 342
     assert "Serial dilutions" not in p.description  # the CLI adds the gradient summary
     assert len(bundle.manifest.samples) == 96
 
@@ -252,14 +251,20 @@ def test_generated_ot2_actions_match_transfers_mixes_and_tips(tmp_path, monkeypa
         for s in delivered_transfers(bundle.protocol.steps)
     ]
     assert moves == expected
-    mixes = [s for s in bundle.protocol.steps if isinstance(s, Mix)]
+    mixes = [
+        s
+        for s in bundle.protocol.steps
+        if isinstance(s, (Mix, MultiMix))
+        for _ in range(len(s.locations) if isinstance(s, MultiMix) else 1)
+    ]
     actual_mixes = [text for text in texts if text.startswith("Mixing ")]
     assert len(actual_mixes) == len(mixes)
     for actual, expected_mix in zip(actual_mixes, mixes, strict=True):
         assert actual.startswith(f"Mixing {expected_mix.cycles} times with a volume of ")
         volume = re.search(r"volume of ([0-9.]+)", actual)
         assert volume and Decimal(volume[1]) == expected_mix.volume
-    tips = len(liquid_steps(bundle.protocol.steps))
+    # Single-channel heads take one tip per lane when a lane set has distinct sources.
+    tips = int(next(line for line in bundle.target.setup if "fresh tips" in line).split()[0])
     assert tips == {"direct": 327, "auto": 420}[strategy]
     assert sum(t.startswith("Picking up tip") for t in texts) == tips
     assert sum(t.startswith("Dropping tip") for t in texts) == tips
@@ -551,7 +556,7 @@ def test_cli_replaces_existing_bundle_with_current_inputs(tmp_path, monkeypatch,
     assert json.loads(
         description.split("Protocol configuration: ", 1)[1]
     ) == configuration().model_dump(mode="json")
-    assert len(plan["protocol"]["steps"]) == 420
+    assert len(plan["protocol"]["steps"]) == 342
     assert "Previous compilation" not in (output / "protocol.html").read_text()
     assert len(json.loads((output / "manifest.json").read_text())["outputs"]) == 96
     assert not (output / "protocol.py").exists()

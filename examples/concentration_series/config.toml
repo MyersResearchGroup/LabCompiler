@@ -20,11 +20,15 @@ solute_and_vehicle_free_medium_and_cultures = true
 # constant additions. Runs shorter than serial_min_steps are dosed directly.
 # warn_below is the smallest volume this lab trusts any pipette to deliver; steps under
 # it (or under a head's own trusted floor) are listed as advisories, not errors.
+# tip_policy: "fresh_per_step" takes a new tip for every operation; "reuse_when_contained"
+# keeps a tip while every destination holds only what the source holds and pre-wets it first;
+# "reuse_per_source" keeps a tip while consecutive operations draw from one source.
 [preparation]
 strategy = "auto"
 concentrate = "2"
 serial_min_steps = 4
 warn_below = "2 uL"
+tip_policy = "fresh_per_step"
 
 # Portable classes specify these two rates only. Other robot settings and
 # calibration retain SDK defaults; the numbers below need instrument validation.
@@ -198,8 +202,15 @@ tip_racks = [
   { id = "star_tips_4", model = "hamilton_300_ul", location = { holder = "tips", index = 3 } },
   { id = "star_tips_5", model = "hamilton_300_ul", location = { holder = "tips", index = 4 } },
 ]
-# One channel and 300 uL tips. The 1 uL minimum is a software demonstration
-# limit, not a validated physical operating range.
+# Eight independent channels with 300 uL tips; a gradient column moves in one stroke.
+# The 1 uL minimum is a software demonstration limit, not a validated operating range.
 channels = [
   { index = 0, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 1, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 2, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 3, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 4, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 5, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 6, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 7, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
 ]

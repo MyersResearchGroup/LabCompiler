@@ -28,10 +28,13 @@ from lab.labware import LabwareKind
 from lab.limits import PipettingLimits
 from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
+    LIQUID_STEPS,
     Binding,
     Distribute,
+    LiquidStep,
     ManualInstruction,
     Mix,
+    MultiMix,
     RecordedProtocol,
     SetTemperature,
     TargetPlan,
@@ -39,9 +42,11 @@ from lab.model import (
     Transfer,
     Wait,
     encode,
+    lanes,
 )
 from lab.samples import Location
 from lab.targets.liquid_handler import LiquidHandler
+from lab.tips import assign_tips
 from lab.units import magnitude, number, uL
 from lab.validation import CompileError, step_error
 
@@ -84,7 +89,9 @@ class STAR:
 
     The caller places carriers, holders, labware, and tips on a PyLabRobot deck.
     ``labware`` maps protocol resource names to those exact physical resources.
-    Compilation preserves this hierarchy and uses one configured pipetting channel.
+    Compilation preserves this hierarchy. ``channels`` lists the independent pipetting
+    channels in use (``channel`` alone names one); a lane set runs across them in strokes of
+    up to that many lanes. Tips follow the protocol's recorded ``TipPolicy``.
     Thermal operations require an external device callback when the artifact runs.
     """
 
@@ -94,6 +101,7 @@ class STAR:
     min_volume: Any
     max_volume: Any
     channel: int = 0
+    channels: tuple[int, ...] = ()
     well_maps: dict[str, tuple[str, ...]] = field(default_factory=dict)
     external_thermal_resources: tuple[str, ...] | None = None
 
@@ -108,8 +116,11 @@ class STAR:
             ) from _sdk_import_error
         if not isinstance(self.deck, HamiltonSTARDeck):
             raise CompileError("STAR requires a PyLabRobot STARDeck or STARLetDeck")
-        if type(self.channel) is not int or not 0 <= self.channel < 8:
-            raise CompileError("STAR channel must be an integer from 0 to 7")
+        channels = self.channels or (self.channel,)
+        if any(type(c) is not int or not 0 <= c < 8 for c in channels) or len(set(channels)) != len(
+            channels
+        ):
+            raise CompileError("STAR channels must be distinct integers from 0 to 7")
         minimum = magnitude(self.min_volume, "microliter")
         maximum = magnitude(self.max_volume, "microliter")
         if minimum > maximum:
@@ -177,10 +188,11 @@ class STAR:
         configuration = {
             "sdk_version": version("pylabrobot"),
             "deck_json": serialized_deck,
-            "channel": self.channel,
+            "channel": channels[0],
+            "channels": list(channels),
             "min_volume_ul": number(minimum),
             "max_volume_ul": number(maximum),
-            "tip_policy": "fresh tip per transfer or mix",
+            "tip_policy": protocol.tip_policy.value,
             "tips": [spot.name for spot in tips],
             "bindings": encode(tuple(bindings)),
             "external_thermal_resources": self.external_thermal_resources,
@@ -189,6 +201,80 @@ class STAR:
         native_definitions = {}
         native_initializers = []
         tip_index = 0
+        assignment = assign_tips(protocol)
+        held: tuple[int, int] | None = None  # (tip number, channels in use)
+
+        def settings(step: LiquidStep, count: int) -> tuple[str, str]:
+            if isinstance(step.liquid_class, LiquidClass):
+                spec = step.liquid_class
+                return (
+                    f", flow_rates=[{number(spec.aspiration_flow_rate_ul_s)}] * {count}",
+                    f", flow_rates=[{number(spec.dispense_flow_rate_ul_s)}] * {count}",
+                )
+            if isinstance(step.liquid_class, HamiltonLiquidClass):
+                name = step.liquid_class.name
+                native = getattr(star_liquid_classes, name, None)
+                if not isinstance(native, PLRHamiltonLiquidClass):
+                    raise CompileError(f"Unknown Hamilton STAR liquid class: {name}")
+                if name not in native_definitions:
+                    definition = vars(native).copy()
+                    native_definitions[name] = definition
+                    native_initializers.append(
+                        f"    {name!r}: HamiltonLiquidClass(**{definition!r}),"
+                    )
+                both = f", hamilton_liquid_classes=[LIQUID_CLASSES[{name!r}]] * {count}"
+                return both, both
+            return "", ""
+
+        def drop() -> None:
+            nonlocal held
+            if held is not None:
+                used = list(channels[: held[1]])
+                commands.append(
+                    f"await lh.discard_tips(use_channels={used}, allow_nonzero_volume=False)"
+                )
+                held = None
+
+        def hold(number_of_tip: int, count: int, volume: Decimal) -> None:
+            nonlocal held, tip_index
+            if held == (number_of_tip, count):
+                return
+            drop()
+            if tip_index + count > len(tips):
+                raise CompileError("Not enough fresh tips")
+            spots = tips[tip_index : tip_index + count]
+            tip_index += count
+            for spot in spots:
+                tip_max = Decimal(str(spot.get_tip().maximal_volume))
+                if not minimum <= volume <= min(maximum, tip_max):
+                    raise CompileError("Volume is outside the configured channel/tip range")
+            names = ", ".join(f"deck.get_resource({spot.name!r})" for spot in spots)
+            commands.append(
+                f"await lh.pick_up_tips([{names}], use_channels={list(channels[:count])})"
+            )
+            held = (number_of_tip, count)
+
+        def stroke(
+            step: LiquidStep,
+            number_of_tip: int,
+            sources: tuple[Location, ...],
+            destinations: tuple[Location, ...],
+        ) -> None:
+            """Aspirate from ``sources`` and dispense to ``destinations`` on parallel channels."""
+            count = len(sources)
+            hold(number_of_tip, count, step.volume)
+            aspiration, dispense = settings(step, count)
+            used = list(channels[:count])
+            vols = f"vols=[{number(step.volume)}] * {count}"
+            from_wells = ", ".join(refs[source] for source in sources)
+            to_wells = ", ".join(refs[destination] for destination in destinations)
+            commands.append(
+                f"await lh.aspirate([{from_wells}], {vols}, use_channels={used}{aspiration})"
+            )
+            commands.append(
+                f"await lh.dispense([{to_wells}], {vols}, use_channels={used}{dispense})"
+            )
+
         for index, step in enumerate(protocol.steps):
             if isinstance(step, (Thermocycle, SetTemperature)):
                 if (
@@ -208,68 +294,51 @@ class STAR:
                         "Thermal operations require a whole-plate binding without a well remapping",
                     )
             commands.append(f"print({describe(step)!r})")
-            if isinstance(step, (Transfer, Mix, Distribute)):
-                if tip_index >= len(tips):
-                    raise step_error(index, step, "Not enough fresh tips")
-                spot = tips[tip_index]
-                tip_index += 1
-                tip_max = Decimal(str(spot.get_tip().maximal_volume))
-                if not minimum <= step.volume <= min(maximum, tip_max):
-                    raise step_error(
-                        index, step, "Volume is outside the configured channel/tip range"
-                    )
-                amount = number(step.volume)
-                channels = f"use_channels=[{self.channel}]"
-                aspiration = dispense = ""
-                if isinstance(step.liquid_class, LiquidClass):
-                    spec = step.liquid_class
-                    aspiration = f", flow_rates=[{number(spec.aspiration_flow_rate_ul_s)}]"
-                    dispense = f", flow_rates=[{number(spec.dispense_flow_rate_ul_s)}]"
-                elif isinstance(step.liquid_class, HamiltonLiquidClass):
-                    name = step.liquid_class.name
-                    native = getattr(star_liquid_classes, name, None)
-                    if not isinstance(native, PLRHamiltonLiquidClass):
-                        raise step_error(index, step, f"Unknown Hamilton STAR liquid class: {name}")
-                    if name not in native_definitions:
-                        definition = vars(native).copy()
-                        native_definitions[name] = definition
-                        native_initializers.append(
-                            f"    {name!r}: HamiltonLiquidClass(**{definition!r}),"
-                        )
-                    aspiration = dispense = f", hamilton_liquid_classes=[LIQUID_CLASSES[{name!r}]]"
-                commands.append(
-                    f"await lh.pick_up_tips([deck.get_resource({spot.name!r})], {channels})"
-                )
-                if isinstance(step, Transfer):
-                    commands.extend(
-                        (
-                            f"await lh.aspirate([{refs[step.source]}], "
-                            f"vols=[{amount}], {channels}{aspiration})",
-                            f"await lh.dispense([{refs[step.destination]}], "
-                            f"vols=[{amount}], {channels}{dispense})",
-                        )
-                    )
-                elif isinstance(step, Distribute):
-                    for destination in step.destinations:
-                        commands.extend(
-                            (
-                                f"await lh.aspirate([{refs[step.source]}], "
-                                f"vols=[{amount}], {channels}{aspiration})",
-                                f"await lh.dispense([{refs[destination]}], "
-                                f"vols=[{amount}], {channels}{dispense})",
+            if isinstance(step, LIQUID_STEPS):
+                number_of_tip = assignment[index]
+                assert number_of_tip is not None
+                try:
+                    pairs = lanes(step)
+                    if isinstance(step, (Mix, MultiMix)):
+                        mixed = tuple(lane_source for lane_source, _ in pairs)
+                        for offset in range(0, len(mixed), len(channels)):
+                            chunk = mixed[offset : offset + len(channels)]
+                            hold(number_of_tip, len(chunk), step.volume)
+                            aspiration, dispense = settings(step, len(chunk))
+                            used = list(channels[: len(chunk)])
+                            vols = f"vols=[{number(step.volume)}] * {len(chunk)}"
+                            at = ", ".join(refs[well] for well in chunk)
+                            commands.extend(
+                                (
+                                    f"for _ in range({step.cycles}):",
+                                    f"    await lh.aspirate([{at}], {vols}, "
+                                    f"use_channels={used}{aspiration})",
+                                    f"    await lh.dispense([{at}], {vols}, "
+                                    f"use_channels={used}{dispense})",
+                                )
                             )
-                        )
-                else:
-                    commands.extend(
-                        (
-                            f"for _ in range({step.cycles}):",
-                            f"    await lh.aspirate([{refs[step.location]}], "
-                            f"vols=[{amount}], {channels}{aspiration})",
-                            f"    await lh.dispense([{refs[step.location]}], "
-                            f"vols=[{amount}], {channels}{dispense})",
-                        )
-                    )
-                commands.append(f"await lh.discard_tips({channels}, allow_nonzero_volume=False)")
+                    elif isinstance(step, (Transfer, Distribute)):
+                        # One channel, one tip: a distribution refills between destinations.
+                        for lane_source, lane_destination in pairs:
+                            assert lane_destination is not None
+                            stroke(step, number_of_tip, (lane_source,), (lane_destination,))
+                    else:
+                        # Independent channels take up to len(channels) lanes per stroke.
+                        for offset in range(0, len(pairs), len(channels)):
+                            group = pairs[offset : offset + len(channels)]
+                            lane_sources = tuple(lane_source for lane_source, _ in group)
+                            lane_destinations = tuple(d for _, d in group if d is not None)
+                            if len(set(lane_sources)) != len(lane_sources):
+                                # One trough feeding several lanes: the channels aspirate in turn.
+                                for lane_source, lane_destination in group:
+                                    assert lane_destination is not None
+                                    stroke(step, number_of_tip, (lane_source,), (lane_destination,))
+                            else:
+                                stroke(step, number_of_tip, lane_sources, lane_destinations)
+                except CompileError as exc:
+                    raise step_error(index, step, str(exc)) from exc
+                if protocol.tip_policy.value == "fresh_per_step":
+                    drop()
             elif isinstance(step, Wait):
                 commands.append(f"await sleep({number(step.seconds)})")
             elif isinstance(step, Thermocycle):
@@ -304,6 +373,7 @@ class STAR:
                 )
             else:
                 raise step_error(index, step, "Unsupported step")
+        drop()
         initialize = []
         for resource in protocol.resources:
             fills = {fill.well: fill.volume for fill in resource.fills}
@@ -381,7 +451,8 @@ class STAR:
             json.dumps(configuration, sort_keys=True),
             source,
             (
-                f"Hamilton deck with {self.deck.num_rails} rails; channel index {self.channel}",
+                f"Hamilton deck with {self.deck.num_rails} rails; "
+                f"channel indices {', '.join(str(c) for c in channels)}",
                 *(
                     (
                         "External thermal device: supply an async callback; return the plate "
@@ -399,10 +470,11 @@ class STAR:
             ),
             limits=(
                 PipettingLimits(
-                    label=f"STAR channel {self.channel}",
+                    label=f"STAR channels {', '.join(str(c) for c in channels)}",
                     min_volume_ul=minimum,
                     max_volume_ul=maximum,
                     trusted_minimum_ul=minimum,
+                    channels=len(channels),
                 ),
             ),
         )
@@ -436,13 +508,17 @@ def lower_layout(deck: Deck, layout: DeckLayout) -> STAR:
             "The STAR backend does not yet support on-deck Module models; "
             "configure a declared external thermal handoff."
         )
-    if len(layout.channels) != 1:
-        raise CompileError(
-            "The STAR backend currently supports one independent channel per layout."
-        )
+    if not 1 <= len(layout.channels) <= 8:
+        raise CompileError("The STAR backend supports one to eight independent channels.")
     channel = layout.channels[0]
-    if not 0 <= channel.index < 8:
+    if any(not 0 <= c.index < 8 for c in layout.channels):
         raise CompileError("STAR channel must be an integer from 0 to 7")
+    if any(
+        (c.min_volume_ul, c.max_volume_ul, c.tip_racks)
+        != (channel.min_volume_ul, channel.max_volume_ul, channel.tip_racks)
+        for c in layout.channels
+    ):
+        raise CompileError("STAR channels in one layout share volume limits and tip racks.")
     robot = plr.STARDeck()
     carriers: dict[str, Any] = {}
     try:
@@ -488,6 +564,7 @@ def lower_layout(deck: Deck, layout: DeckLayout) -> STAR:
         min_volume=channel.min_volume_ul * uL,
         max_volume=channel.max_volume_ul * uL,
         channel=channel.index,
+        channels=tuple(c.index for c in layout.channels),
         well_maps={
             placement.container: placement.wells
             for placement in layout.placements

@@ -151,3 +151,6 @@ class PreparationConfig(ConfigModel):
     premix_overage: Annotated[Decimal, Field(ge=1, allow_inf_nan=False)] = Decimal("1.1")
     warn_below: Volume | None = None
     resolution: Volume | None = None
+    tip_policy: Literal["fresh_per_step", "reuse_per_source", "reuse_when_contained"] = (
+        "fresh_per_step"
+    )

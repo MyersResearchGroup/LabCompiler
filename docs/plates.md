@@ -190,6 +190,51 @@ target as the least concentrated stock whose `max_target` covers it. The recipe 
 vehicle fraction against vehicle carried by stocks, fills the remainder with medium, then
 inoculates and mixes. Every balance is checked; a negative one is a `ValueError` naming the well.
 
+## Lanes and multichannel heads
+
+`Protocol.transfer()` and `mix()` accept sequences of wells. Lane `i` moves `source[i]` to
+`destination[i]`; one source well feeds every lane; several lanes may share a destination such
+as a waste trough. `Plate.column(n)` returns a column in row order, so a serial dilution step
+reads as it is pipetted:
+
+```python
+p.transfer(plate.column(12), plate.column(11), volume=100 * uL)
+p.mix(plate.column(11), volume=100 * uL, cycles=3)
+```
+
+These record `MultiTransfer` and `MultiMix` steps. Volume accounting treats every lane
+separately; the worksheet lists the lanes and animates them together. Targets specialize:
+
+| Target | Lane set that fills rows A–H of one column | Other lane sets |
+| --- | --- | --- |
+| Opentrons with an 8-channel head (`p300_multi_gen2`, `p20_multi_gen2`, `flex_8channel_50`, `flex_8channel_1000`) | One stroke addressed by the column's top well; the head draws from a matching column or one trough well and picks up a whole column of tips | A single-channel head runs the lanes in turn, with one tip for a shared source and a fresh tip per lane otherwise |
+| Hamilton STAR with `n` configured `Channel`s | Up to `n` lanes per stroke on `use_channels=[0, …]`; alternating rows such as A/C/E/G are one stroke | Lanes are taken in groups of `n`; a shared trough is drawn lane by lane |
+| Manual | "Transfer 100 µL along 8 lanes together from cultures column 12 (rows A–H) to column 11", for an 8-channel pipette | The lanes are listed |
+
+`record_serial_dilution()` records every level wider than one well as a lane set, so a gradient
+across rows A/C/E/G is four lanes per step: one STAR stroke, or four single-channel moves on an
+OT-2 whose 8-channel head cannot skip rows.
+
+## Tip policy
+
+`Protocol(name, tip_policy=...)` records when tips are replaced; `compile(..., tip_policy=...)`
+overrides it. `TipPolicy.FRESH_PER_STEP` takes a new tip for every transfer, distribution, or
+mix. `REUSE_PER_SOURCE` keeps a tip while consecutive steps draw from one source with one liquid
+class. `REUSE_WHEN_CONTAINED` keeps a tip while every destination holds only substances the
+source also holds, so nothing foreign is carried back into the source: medium may go into empty
+wells on one tip, a first additive may follow it into those wells on one tip, but the first well
+that already holds a second additive forces a fresh tip. Declare what a source is made of with
+`load(..., components=("medium", "Van"))`; a fill without components is one component named by
+its material text.
+
+A pre-wetting stroke is `prewet(p, source, volume=...)`: a one-cycle mix at the source that
+leaves the volume accounting unchanged and, under a reuse policy, keeps the tip for the moves
+that follow. `assemble()` records one before the first move from each source when the protocol's
+policy reuses tips. `lab.tips.assign_tips()` numbers the tips of a recorded protocol and
+`tip_count()` counts them (a multichannel stroke counts one tip per lane); the worksheet and
+`plan.json` report the policy and the count, and robot targets pick up and drop tips at the
+numbered boundaries.
+
 ## Advisories
 
 Hard limits stay errors: a volume no head can pipette or an overflowing well raises

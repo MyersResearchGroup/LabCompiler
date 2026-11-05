@@ -1,7 +1,7 @@
 """A mutable builder with explicit ownership; ordinary Python composes steps."""
 
 import inspect
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from pathlib import Path
@@ -14,12 +14,15 @@ from lab.model import (
     Hold,
     ManualInstruction,
     Mix,
+    MultiMix,
+    MultiTransfer,
     Origin,
     RecordedProtocol,
     Resource,
     SetTemperature,
     Step,
     Thermocycle,
+    TipPolicy,
     Transfer,
     Wait,
 )
@@ -55,6 +58,12 @@ class Plate:
             raise KeyError(f"Unknown row {row!r}")
         return tuple(self[f"{row}{col + 1}"] for col in range(self.shape[1]))
 
+    def column(self, column: int) -> tuple[Well, ...]:
+        """The wells of one 1-based column in row order, as a multichannel head sees them."""
+        if type(column) is not int or not 1 <= column <= self.shape[1]:
+            raise KeyError(f"Unknown column {column!r}")
+        return tuple(self[f"{chr(65 + row)}{column}"] for row in range(self.shape[0]))
+
 
 def _origin() -> Origin:
     frame = inspect.currentframe()
@@ -78,9 +87,18 @@ def _text(value: str, label: str) -> str:
 class Protocol:
     """Record sequential work. Construction and compilation never operate hardware."""
 
-    def __init__(self, name: str, *, description: str = "") -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        description: str = "",
+        tip_policy: TipPolicy = TipPolicy.FRESH_PER_STEP,
+    ) -> None:
         self.name = _text(name, "Protocol name")
         self.description = description
+        if not isinstance(tip_policy, TipPolicy):
+            raise TypeError("Pass a TipPolicy member")
+        self.tip_policy = tip_policy
         self._owner = object()
         self._resources: dict[str, Resource] = {}
         self._steps: list[Step] = []
@@ -140,6 +158,7 @@ class Protocol:
         contents: str | None = None,
         volume: Any = None,
         dead_volume: Any = None,
+        components: Iterable[str] = (),
     ) -> Well:
         """Declare one logical well, optionally with explicitly loaded material."""
         if (contents is None) != (volume is None):
@@ -152,7 +171,7 @@ class Protocol:
                 raise ValueError(f"Initial volume exceeds the capacity of {name}")
         well = self.plate(name, shape=(1, 1), capacity=capacity, dead_volume=dead_volume)["A1"]
         if contents is not None:
-            self.load(well, contents, volume=volume)
+            self.load(well, contents, volume=volume, components=components)
         return well
 
     def _location(self, well: Well) -> Location:
@@ -163,8 +182,15 @@ class Protocol:
             raise ValueError("Unknown well")
         return Location(well.resource, well.name)
 
-    def load(self, well: Well, material: str, *, volume: Any) -> None:
-        """Declare initial contents before recording any steps; this is not a transfer."""
+    def load(
+        self, well: Well, material: str, *, volume: Any, components: Iterable[str] = ()
+    ) -> None:
+        """Declare initial contents before recording any steps; this is not a transfer.
+
+        ``components`` names the substances the material is made of, for example
+        ``("medium", "Van")`` for a stock dissolved in medium. Tip-reuse policies compare
+        component sets; without them the material text is its only component.
+        """
         if self._steps:
             raise ValueError("Declare initial contents before recording steps")
         location = self._location(well)
@@ -174,7 +200,10 @@ class Protocol:
         amount = magnitude(volume, "microliter")
         if amount > resource.capacity:
             raise ValueError(f"Initial volume exceeds the capacity of {location}")
-        fill = Fill(location.well, _text(material, "Material"), amount)
+        parts = tuple(_text(part, "Component") for part in components)
+        if len(set(parts)) != len(parts):
+            raise ValueError("Components must be distinct")
+        fill = Fill(location.well, _text(material, "Material"), amount, parts)
         self._resources[location.resource] = replace(resource, fills=(*resource.fills, fill))
 
     def add_sample(
@@ -206,20 +235,44 @@ class Protocol:
 
     def transfer(
         self,
-        source: Well,
-        destination: Well,
+        source: Well | Sequence[Well],
+        destination: Well | Sequence[Well],
         *,
         volume: Any,
         liquid_class: LiquidClassSpec | None = None,
     ) -> None:
-        """Move liquid using optional explicit rates or a native Hamilton class."""
+        """Move liquid along one lane, or along several equal-volume lanes together.
+
+        With sequences, lane ``i`` moves ``source[i]`` to ``destination[i]``; a single
+        source well feeds every destination lane, and several lanes may share a destination
+        such as a waste trough. A target with enough channels runs the lanes in one stroke
+        and otherwise one after another.
+        """
         validate_liquid_class(liquid_class)
-        start, end = self._location(source), self._location(destination)
-        if start == end:
-            raise ValueError("Transfer source and destination must differ")
-        self._steps.append(
-            Transfer(start, end, magnitude(volume, "microliter"), _origin(), liquid_class)
+        amount = magnitude(volume, "microliter")
+        if isinstance(source, Well) and isinstance(destination, Well):
+            start, end = self._location(source), self._location(destination)
+            if start == end:
+                raise ValueError("Transfer source and destination must differ")
+            self._steps.append(Transfer(start, end, amount, _origin(), liquid_class))
+            return
+        ends = tuple(
+            self._location(well)
+            for well in ((destination,) if isinstance(destination, Well) else destination)
         )
+        if not ends:
+            raise ValueError("Lanes need at least one destination")
+        starts = tuple(
+            self._location(well)
+            for well in ((source,) * len(ends) if isinstance(source, Well) else source)
+        )
+        if len(starts) != len(ends):
+            raise ValueError("Lanes need one source per destination")
+        if any(start == end for start, end in zip(starts, ends, strict=True)):
+            raise ValueError("Transfer source and destination must differ")
+        if len(set(zip(starts, ends, strict=True))) != len(ends):
+            raise ValueError("Lanes must be distinct source/destination pairs")
+        self._steps.append(MultiTransfer(starts, ends, amount, _origin(), liquid_class))
 
     def distribute(
         self,
@@ -245,25 +298,26 @@ class Protocol:
 
     def mix(
         self,
-        well: Well,
+        well: Well | Sequence[Well],
         *,
         volume: Any,
         cycles: int,
         liquid_class: LiquidClassSpec | None = None,
     ) -> None:
-        """Repeat aspiration and dispense at one well, with the supplied class on both."""
+        """Repeat aspiration and dispense at one well, or at several wells together."""
         validate_liquid_class(liquid_class)
         if type(cycles) is not int or cycles < 1:
             raise ValueError("Mix cycles must be a positive integer")
-        self._steps.append(
-            Mix(
-                self._location(well),
-                magnitude(volume, "microliter"),
-                cycles,
-                _origin(),
-                liquid_class,
-            )
-        )
+        amount = magnitude(volume, "microliter")
+        if isinstance(well, Well):
+            self._steps.append(Mix(self._location(well), amount, cycles, _origin(), liquid_class))
+            return
+        locations = tuple(self._location(item) for item in well)
+        if not locations:
+            raise ValueError("Lanes need at least one well")
+        if len(set(locations)) != len(locations):
+            raise ValueError("Mixed wells must be distinct")
+        self._steps.append(MultiMix(locations, amount, cycles, _origin(), liquid_class))
 
     def wait(self, duration: Any) -> None:
         self._steps.append(Wait(magnitude(duration, "second"), _origin()))
@@ -328,4 +382,5 @@ class Protocol:
             tuple(self._placements),
             tuple(self._input_sample_ids),
             tuple(self._output_sample_ids),
+            self.tip_policy,
         )

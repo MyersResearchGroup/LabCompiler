@@ -20,7 +20,7 @@
       {% else %}
       <td class="action">{{ step.action }}</td>
       <td class="quantity">{{ step.volume|number }} µL{% if step.volume_note %}<small>{{ step.volume_note }}</small>{% endif %}</td>
-      <td class="location">{{ reference(step.source) }}</td>
+      <td class="location">{% if step.sources %}{% for source in step.sources %}{{ reference(source) }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}{{ reference(step.source) }}{% endif %}</td>
       <td class="location">{% for destination in step.destinations %}{{ reference(destination) }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
       <td class="settings">
         {% if step.liquid_class %}{{ reference(step.liquid_class, css_class="liquid-class") }}{% else %}<span class="muted">Unspecified</span>{% endif %}

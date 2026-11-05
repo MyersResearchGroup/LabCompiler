@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from lab import Protocol, compile, uL, uM
-from lab.model import Distribute, Mix, Transfer
+from lab.model import Distribute, Mix, MultiMix, MultiTransfer, Transfer
 from lab.plates import (
     ConditionSpec,
     ControlSpec,
@@ -213,13 +213,16 @@ def test_recorded_gradient_leaves_every_well_at_the_gradient_volume():
         assert final[Location("cultures", well)] == 100
     assert final[Location("waste", "A1")] == 400
     assert final[Location("van", "A1")] == 1000 - 4 * 40
-    moves = [s for s in p.steps if isinstance(s, Transfer)]
-    assert len(moves) == 8 * 4
+    # Each level moves as one four-lane set: seven column-to-column strokes plus one to waste.
+    moves = [s for s in p.steps if isinstance(s, MultiTransfer)]
+    assert len(moves) == 8 and all(len(s.destinations) == 4 for s in moves)
     assert {s.volume for s in moves} == {Decimal(100)}
-    mixes = [s for s in p.steps if isinstance(s, Mix)]
-    assert len(mixes) == 8 * 4 and all(m.volume == 100 and m.cycles == 3 for m in mixes)
+    assert moves[-1].destinations == (Location("waste", "A1"),) * 4
+    mixes = [s for s in p.steps if isinstance(s, MultiMix)]
+    assert len(mixes) == 8 and all(m.volume == 100 and m.cycles == 3 for m in mixes)
     assert isinstance(p.steps[0], Distribute) and p.steps[0].volume == 160
     assert isinstance(p.steps[2], Distribute) and p.steps[2].volume == 40
+    assert not any(isinstance(s, (Transfer, Mix)) for s in p.steps)
 
 
 def test_premix_scales_components_and_shares_one_portion():

@@ -36,7 +36,9 @@ class ModuleModel(Enum):
 class TipRackModel(Enum):
     OPENTRONS_20_UL = "opentrons_20_ul"
     OPENTRONS_300_UL = "opentrons_300_ul"
+    FLEX_50_UL = "flex_50_ul"
     FLEX_200_UL = "flex_200_ul"
+    FLEX_1000_UL = "flex_1000_ul"
     HAMILTON_50_UL = "hamilton_50_ul"
     HAMILTON_300_UL = "hamilton_300_ul"
 
@@ -45,6 +47,22 @@ class PipetteModel(Enum):
     P20_SINGLE_GEN2 = "p20_single_gen2"
     P300_SINGLE_GEN2 = "p300_single_gen2"
     FLEX_1CHANNEL_1000 = "flex_1channel_1000"
+    P20_MULTI_GEN2 = "p20_multi_gen2"
+    P300_MULTI_GEN2 = "p300_multi_gen2"
+    FLEX_8CHANNEL_50 = "flex_8channel_50"
+    FLEX_8CHANNEL_1000 = "flex_8channel_1000"
+
+
+PIPETTE_CHANNELS: dict[PipetteModel, int] = {
+    PipetteModel.P20_SINGLE_GEN2: 1,
+    PipetteModel.P300_SINGLE_GEN2: 1,
+    PipetteModel.FLEX_1CHANNEL_1000: 1,
+    PipetteModel.P20_MULTI_GEN2: 8,
+    PipetteModel.P300_MULTI_GEN2: 8,
+    PipetteModel.FLEX_8CHANNEL_50: 8,
+    PipetteModel.FLEX_8CHANNEL_1000: 8,
+}
+"""Nozzles per head; multichannel heads deliver the same volume on every nozzle."""
 
 
 class Mount(Enum):

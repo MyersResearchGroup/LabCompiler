@@ -103,9 +103,10 @@ def record_serial_dilution(
 ) -> None:
     """Record diluent fills, the top dose, and the chain of mix-then-transfer moves.
 
-    Levels are paired by index: level ``i`` well ``j`` feeds level ``i + 1`` well ``j``. The
-    bottom level passes its surplus to ``waste`` so every well ends at the gradient volume.
-    Zero-control wells receive the gradient volume of diluent and no stock.
+    Levels are paired by index: level ``i`` well ``j`` feeds level ``i + 1`` well ``j``, and a
+    level wider than one well is recorded as one lane set so multichannel targets run it in
+    one stroke. The bottom level passes its surplus to ``waste`` so every well ends at the
+    gradient volume. Zero-control wells receive the gradient volume of diluent and no stock.
     """
     c = plan.candidate
     top = [plate[w] for w in c.levels[0]]
@@ -119,10 +120,18 @@ def record_serial_dilution(
     if below or zeros:
         p.distribute(diluent, [*below, *zeros], volume=gradient, liquid_class=diluent_class)
     p.distribute(stock, top, volume=plan.top_stock_ul * uL, liquid_class=stock_class)
+
+    def lane_set(wells: tuple[str, ...]) -> Well | list[Well]:
+        return plate[wells[0]] if len(wells) == 1 else [plate[w] for w in wells]
+
     for upper, lower in zip(c.levels, c.levels[1:], strict=False):
-        for source, destination in zip(upper, lower, strict=True):
-            p.mix(plate[source], volume=mix_volume, cycles=mix_cycles, liquid_class=stock_class)
-            p.transfer(plate[source], plate[destination], volume=transfer, liquid_class=stock_class)
-    for bottom in c.levels[-1]:
-        p.mix(plate[bottom], volume=mix_volume, cycles=mix_cycles, liquid_class=stock_class)
-        p.transfer(plate[bottom], waste, volume=transfer, liquid_class=stock_class)
+        p.mix(lane_set(upper), volume=mix_volume, cycles=mix_cycles, liquid_class=stock_class)
+        p.transfer(lane_set(upper), lane_set(lower), volume=transfer, liquid_class=stock_class)
+    bottom = c.levels[-1]
+    p.mix(lane_set(bottom), volume=mix_volume, cycles=mix_cycles, liquid_class=stock_class)
+    p.transfer(
+        lane_set(bottom),
+        waste if len(bottom) == 1 else [waste] * len(bottom),
+        volume=transfer,
+        liquid_class=stock_class,
+    )
