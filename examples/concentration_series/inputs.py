@@ -1,7 +1,8 @@
-"""LMSF fitness CSV and protocol configuration models, followed by dose calculation.
+"""Protocol configuration for preparing an LMSF destination layout.
 
-The models mirror the CSV columns and config.toml. prepare_wells() checks the
-inputs together and resolves sources and doses before protocol construction.
+The models mirror config.toml. The CSV itself is read by ``lab.plugins.lmsf`` into a
+``PlateDesign``; ``sources()`` resolves the configured stocks and cultures into the Lab
+objects that ``lab.plates.assemble`` consumes.
 """
 
 from dataclasses import dataclass
@@ -9,20 +10,23 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
-from lab import Quantity, uL
+from lab import HamiltonLiquidClass, LiquidClass, Protocol, Well, uL
 from lab.config import (
     Concentration,
-    ConcentrationUnit,
     ConfigModel,
     LiquidClassConfig,
     MixingConfig,
     NonemptyString,
-    NonnegativeDecimal,
     NonnegativeVolume,
+    PortableLiquidClassConfig,
+    PreparationConfig,
     Volume,
     VolumeFraction,
 )
 from lab.deck import Deck
+from lab.liquid_classes import LiquidClassSpec
+from lab.plates import Mixing, Settings, Stock, Strategy
+from lab.plugins.lmsf import material_name
 from lab.units import dilution_volume, magnitude
 
 WellName = Annotated[str, Field(strict=True, pattern=r"^[A-H](?:[1-9]|1[0-2])$")]
@@ -39,8 +43,11 @@ class NamedSourceConfig(SourceConfig):
 
 
 class MediumConfig(NamedSourceConfig):
-    well: Literal["A1"]  # The development deck binds reservoir A1.
+    """The base medium in reservoir A1; ``diluent_volume`` loads A2 for serial dilutions."""
+
+    well: Literal["A1"]
     dead_volume: NonnegativeVolume
+    diluent_volume: Volume | None = None
 
 
 class StockConfig(SourceConfig):
@@ -73,6 +80,7 @@ class ProtocolConfig(ConfigModel):
     vehicle_fraction: VolumeFraction
     source_dead_volume: NonnegativeVolume
     solute_and_vehicle_free_medium_and_cultures: Annotated[bool, Field(strict=True)]
+    preparation: PreparationConfig = PreparationConfig()
     liquid_classes: dict[NonemptyString, LiquidClassConfig]
     medium: MediumConfig
     vehicle: NamedSourceConfig
@@ -129,130 +137,103 @@ class ProtocolConfig(ConfigModel):
                 raise ValueError(f"{path}.liquid_class: unknown class {source.liquid_class!r}")
         return self
 
-
-class Condition(ConfigModel):
-    """One fitness CSV record; aliases preserve the source column names."""
-
-    position: Annotated[int, Field(ge=1, le=96)]
-    well: WellName
-    row: Annotated[str, Field(pattern=r"^[A-H]$")]
-    column: Annotated[int, Field(ge=1, le=12)]
-    strain: NonemptyString
-    plasmid: NonemptyString
-    inducer1_id: NonemptyString = Field(alias="inducer1Id")
-    inducer1_concentration: NonnegativeDecimal = Field(alias="inducer1Concentration")
-    inducer1_units: ConcentrationUnit = Field(alias="inducer1Units")
-    inducer2_id: NonemptyString = Field(alias="inducer2Id")
-    inducer2_concentration: NonnegativeDecimal = Field(alias="inducer2Concentration")
-    inducer2_units: ConcentrationUnit = Field(alias="inducer2Units")
-    selector_id: NonemptyString = Field(alias="selectorId")
-    selector_concentration: NonnegativeDecimal = Field(alias="selectorConc")
-    selector_units: ConcentrationUnit = Field(alias="selectorUnits")
-
-    @field_validator("strain", "plasmid", "inducer1_id", "inducer2_id", "selector_id")
-    @classmethod
-    def assigned_name(cls, value: str) -> str:
-        if value == "none":
-            raise ValueError("Expected a known culture or solute assignment")
-        return value
-
-    @model_validator(mode="after")
-    def consistent_record(self) -> Self:
-        if (
-            self.well != f"{self.row}{self.column}"
-            or self.position != 8 * (self.column - 1) + ord(self.row) - 64
-        ):
-            raise ValueError("Inconsistent position/row/column/well")
-        if len({self.inducer1_id, self.inducer2_id, self.selector_id}) != 3:
-            raise ValueError("Expected distinct solutes")
-        return self
-
-
-class PlateLayout(ConfigModel):
-    """Validated fitness CSV records, retaining each physical well occurrence."""
-
-    conditions: Annotated[tuple[Condition, ...], Field(min_length=1)]
-
-    @model_validator(mode="after")
-    def distinct_wells(self) -> Self:
-        if len({condition.well for condition in self.conditions}) != len(self.conditions):
-            raise ValueError("Repeated CSV destination")
-        return self
-
-
-@dataclass(frozen=True)
-class PreparedWell:
-    """A CSV condition with its source and doses resolved before recording operations."""
-
-    well: str
-    culture: CultureConfig
-    concentrations: dict[str, Quantity]
-    stock_volumes: tuple[tuple[StockConfig, Quantity], ...]
-    vehicle_volume: Quantity
-    medium_volume: Quantity
-
-
-def prepare_wells(layout: PlateLayout, config: ProtocolConfig) -> list[PreparedWell]:
-    """Check the two inputs together and calculate each well's additions once."""
-    conditions = {condition.well: condition for condition in layout.conditions}
-    selected_wells = config.wells if config.wells is not None else tuple(conditions)
-    if missing := set(selected_wells) - conditions.keys():
-        raise ValueError(f"Selected wells absent from CSV: {sorted(missing)}")
-    cultures = {(culture.strain, culture.plasmid): culture for culture in config.cultures}
-    prepared_wells = []
-    for well in selected_wells:
-        condition = conditions[well]
-        culture = cultures.get((condition.strain, condition.plasmid))
-        if culture is None:
-            raise ValueError(f"{well}: no source for {condition.strain} / {condition.plasmid}")
-        # The CSV model has already parsed the numbers and checked the units.
-        targets = {
-            condition.inducer1_id: condition.inducer1_concentration * condition.inducer1_units,
-            condition.inducer2_id: condition.inducer2_concentration * condition.inducer2_units,
-            condition.selector_id: condition.selector_concentration * condition.selector_units,
-        }
-        doses: list[tuple[StockConfig, Quantity]] = []
-        for solute, target in targets.items():
-            if target.magnitude == 0:
-                continue
-            candidates = sorted(
-                (stock for stock in config.stocks if stock.solute == solute),
-                key=lambda stock: magnitude(stock.max_target, str(target.units), positive=False),
-            )
-            selected = next((stock for stock in candidates if target <= stock.max_target), None)
-            if selected is None:
-                raise ValueError(f"{well}: no stock covers {solute} target {target}")
-            doses.append(
-                (
-                    selected,
-                    dilution_volume(
-                        stock_concentration=selected.concentration,
-                        target_concentration=target,
-                        final_volume=config.final_volume,
-                    ),
-                )
-            )
-        vehicle_volume: Quantity = config.vehicle_fraction * config.final_volume - sum(
-            (stock.vehicle_fraction * dose for stock, dose in doses), 0 * uL
+    def settings(self, liquid_classes: dict[str, LiquidClassSpec]) -> Settings:
+        """Preparation settings for ``lab.plates.assemble`` from this configuration."""
+        return Settings(
+            final_volume=self.final_volume,
+            inoculum_volume=self.inoculum_volume,
+            vehicle_fraction=self.vehicle_fraction,
+            strategy=Strategy(self.preparation.strategy),
+            concentrate=self.preparation.concentrate,
+            serial_min_steps=self.preparation.serial_min_steps,
+            premix_min_group=self.preparation.premix_min_group,
+            premix_overage=self.preparation.premix_overage,
+            source_mix=Mixing(
+                volume=self.source_mix.volume,
+                cycles=self.source_mix.cycles,
+                liquid_class=liquid_classes[self.source_mix.liquid_class],
+            ),
+            destination_mix=Mixing(
+                volume=self.destination_mix.volume,
+                cycles=self.destination_mix.cycles,
+                liquid_class=liquid_classes[self.destination_mix.liquid_class],
+            ),
         )
-        medium_volume: Quantity = (
-            config.final_volume
-            - config.inoculum_volume
-            - vehicle_volume
-            - sum((dose for _, dose in doses), 0 * uL)
+
+
+def liquid_classes(config: ProtocolConfig) -> dict[str, LiquidClassSpec]:
+    """Resolve named configuration entries into the Lab liquid classes used by the recipe."""
+    return {
+        name: LiquidClass(
+            name,
+            aspiration_flow_rate=spec.aspiration_flow_rate,
+            dispense_flow_rate=spec.dispense_flow_rate,
         )
-        if vehicle_volume.magnitude < 0 or medium_volume.magnitude < 0:
-            raise ValueError(
-                f"{well}: stock/vehicle/inoculum additions exceed the final composition"
-            )
-        prepared_wells.append(
-            PreparedWell(
-                well=well,
-                culture=culture,
-                concentrations=targets,
-                stock_volumes=tuple(doses),
-                vehicle_volume=vehicle_volume,
-                medium_volume=medium_volume,
+        if isinstance(spec, PortableLiquidClassConfig)
+        else HamiltonLiquidClass(spec.name)
+        for name, spec in config.liquid_classes.items()
+    }
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Sources:
+    """Declared and loaded sources, ready for ``lab.plates.assemble``."""
+
+    medium: Well
+    diluent: Well | None
+    vehicle: Well
+    waste: Well
+    stocks: tuple[Stock, ...]
+    inocula: dict[str, Well]
+    culture_wells: dict[str, CultureConfig]
+
+
+def sources(p: Protocol, config: ProtocolConfig, classes: dict[str, LiquidClassSpec]) -> Sources:
+    """Declare the reservoirs and load every configured source into ``p``."""
+    reagents = p.plate(
+        "reagents", shape=(1, 12), capacity=15000 * uL, dead_volume=config.source_dead_volume
+    )
+    media = p.plate(
+        "medium", shape=(1, 2), capacity=15000 * uL, dead_volume=config.medium.dead_volume
+    )
+    p.load(media["A1"], config.medium.name, volume=config.medium.volume)
+    diluent = None
+    if config.medium.diluent_volume is not None:
+        p.load(media["A2"], config.medium.name, volume=config.medium.diluent_volume)
+        diluent = media["A2"]
+    waste = p.container("waste", capacity=15000 * uL)
+    p.load(reagents[config.vehicle.well], config.vehicle.name, volume=config.vehicle.volume)
+    stocks = []
+    for stock in config.stocks:
+        p.load(
+            reagents[stock.well],
+            f"{stock.solute}: {stock.concentration}; "
+            f"{config.vehicle.name} {stock.vehicle_fraction} v/v",
+            volume=stock.volume,
+        )
+        stocks.append(
+            Stock(
+                solute=stock.solute,
+                concentration=stock.concentration,
+                source=reagents[stock.well],
+                max_target=stock.max_target,
+                vehicle_fraction=stock.vehicle_fraction,
+                liquid_class=classes[stock.liquid_class],
             )
         )
-    return prepared_wells
+    inocula: dict[str, Well] = {}
+    culture_wells: dict[str, CultureConfig] = {}
+    for culture in config.cultures:
+        material = material_name(culture.strain, culture.plasmid)
+        p.load(reagents[culture.well], material, volume=culture.volume)
+        inocula[material] = reagents[culture.well]
+        culture_wells[material] = culture
+    return Sources(
+        medium=media["A1"],
+        diluent=diluent,
+        vehicle=reagents[config.vehicle.well],
+        waste=waste,
+        stocks=tuple(stocks),
+        inocula=inocula,
+        culture_wells=culture_wells,
+    )

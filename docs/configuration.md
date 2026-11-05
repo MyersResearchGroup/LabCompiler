@@ -45,3 +45,7 @@ Quantity fields accept unit-bearing strings or Pint `Quantity` objects. They rej
 Existing Lab dataclasses can also be fields. For example, `deck: lab.deck.Deck` parses nested containers and layouts into typed Lab objects, including enums, locations, and Decimal limits. Pydantic applies their existing dataclass validation. The [concentration-series configuration](../examples/concentration_series/config.toml) demonstrates this without a separate deck parser or schema.
 
 For applications that do not use Pydantic, `lab.units.parse_quantity(value, unit="microliter")` provides the same normalization. `unit` may also be a tuple of alternatives for different dimensions, such as `("mole/liter", "gram/liter")`. The first compatible unit is used. `positive=False` permits zero; negative or nonfinite values always fail. This input parser does not change the `Protocol` API: operations take quantity objects.
+
+## Plate designs and preparation settings
+
+`PlateDesignConfig` is the typed form of a [`lab.plates.PlateDesign`](plates.md): a name, an optional shape, the final volume, and `wells`, each with an optional `material` and a `concentrations` table of unit-bearing strings. `to_design()` builds the Lab object. `PreparationConfig` carries the `strategy` (`direct`, `serial`, or `auto`), `concentrate`, `serial_min_steps`, and the optional premix settings that `lab.plates.Settings` consumes. The concentration-series configuration uses `PreparationConfig` as its `[preparation]` table.

@@ -2,25 +2,35 @@
 
 Run with --csv and --config (see config.toml). Stocks are supplied already
 prepared. Every CSV row is prepared unless config.wells selects a subset.
-The example ends with an inoculated culture plate.
+--strategy chooses direct dosing, serial dilution of detected gradients, or
+automatic selection. The example ends with an inoculated culture plate.
 """
 
 import argparse
-import csv
 import hashlib
 import tomllib
-from io import StringIO
 from pathlib import Path
 
-from examples.concentration_series.inputs import (
-    Condition,
-    PlateLayout,
-    ProtocolConfig,
-    prepare_wells,
-)
+from examples.concentration_series.inputs import ProtocolConfig
 from examples.concentration_series.protocol import protocol
 from lab import compile
 from lab.equipment import LiquidHandler
+from lab.plates import PlateDesign
+from lab.plugins.lmsf import read_layout
+
+
+def select(design: PlateDesign, wells: tuple[str, ...] | None) -> PlateDesign:
+    """Keep the configured subset of wells, in the requested order."""
+    if wells is None:
+        return design
+    if missing := set(wells) - {target.well for target in design.wells}:
+        raise ValueError(f"Selected wells absent from CSV: {sorted(missing)}")
+    return PlateDesign(
+        name=design.name,
+        shape=design.shape,
+        final_volume_ul=design.final_volume_ul,
+        wells=tuple(design[well] for well in wells),
+    )
 
 
 def main() -> None:
@@ -28,26 +38,38 @@ def main() -> None:
     parser.add_argument("--csv", required=True, type=Path, help="LMSF fitness destination CSV")
     parser.add_argument("--config", required=True, type=Path, help="Protocol configuration TOML")
     parser.add_argument("--target", choices=("manual", "ot2", "star"), default="manual")
+    parser.add_argument(
+        "--strategy",
+        choices=("direct", "serial", "auto"),
+        help="Override preparation.strategy from the configuration",
+    )
     parser.add_argument("--out")
     args = parser.parse_args()
     try:
         with args.config.open("rb") as stream:
-            config = ProtocolConfig.model_validate(tomllib.load(stream))
+            raw = tomllib.load(stream)
+        if args.strategy is not None:
+            raw.setdefault("preparation", {})["strategy"] = args.strategy
+        config = ProtocolConfig.model_validate(raw)
         csv_bytes = args.csv.read_bytes()
-        reader = csv.DictReader(StringIO(csv_bytes.decode("utf-8-sig"), newline=""))
-        headers = {field.alias or name for name, field in Condition.model_fields.items()}
-        if set(reader.fieldnames or ()) != headers or len(reader.fieldnames or ()) != len(headers):
-            raise ValueError(
-                "Expected the LMSF fitness CSV schema; cytometry needs a separate recipe"
-            )
-        layout = PlateLayout.model_validate({"conditions": list(reader)})
-        prepared_wells = prepare_wells(layout, config)
-        p = protocol(prepared_wells, config)
+        design = select(
+            read_layout(
+                csv_bytes.decode("utf-8-sig"), name="cultures", final_volume=config.final_volume
+            ),
+            config.wells,
+        )
+        p, report = protocol(design, config)
         summary, _, notes = p.description.partition("\n\n")
+        gradients = ", ".join(
+            f"{plan.candidate.solute} {plan.candidate.steps}-step {plan.candidate.fold}-fold "
+            f"across {plan.candidate.width} rows"
+            for plan in report.gradients
+        )
         p.description = (
             f"{summary}\n\n"
             f"Targets from {args.csv.name} (SHA256 {hashlib.sha256(csv_bytes).hexdigest()}).\n\n"
-            f"{notes}"
+            + (f"Serial dilutions: {gradients}.\n\n" if gradients else "")
+            + notes
         )
         handler = None if args.target == "manual" else LiquidHandler(args.target)
         bundle = compile(

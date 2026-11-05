@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `lab.plates` describes a plate by its intended end state. `PlateDesign` and `WellTarget` hold per-well materials and solute concentrations; `find_serial_dilutions()` and `parallelize()` detect geometric gradients, `find_replicate_groups()` identical chemistry; `plan_serial_dilution()` and `record_serial_dilution()` build a gradient at a chosen concentrate factor with the arithmetic documented in `docs/plates.md`; `plan_premix()` and `record_premix()` prepare replicate portions once; `arrange()` lays out a plate from `Requirements`; `assemble()` prepares a design from declared stocks, medium, vehicle, and inocula under a `Strategy` of direct, serial, or automatic dosing and reports its decisions.
+- `lab.config.PlateDesignConfig` and `PreparationConfig` are the typed JSON and TOML forms of a design and of the preparation settings. `lab.plugins.lmsf` reads and writes the LMSF destination CSV as a view of a design; the core package does not depend on that format.
+- `Protocol.capacity()` returns the declared capacity of a plate or well. `lab.uM` and `lab.mM` are exported molar units.
+
+### Changed behavior
+
+- The concentration-series example prepares the layout's Van gradients as serial dilutions by default (`preparation.strategy = "auto"`), draws gradient diluent from a second medium reservoir well, and discards one transfer volume per lane into a declared waste container. `--strategy direct` reproduces per-well dosing. Its configuration gains a `[preparation]` table, `medium.diluent_volume`, a `waste` container, and one more tip rack per robot layout.
+
 ## 0.3.0
 
 ### Changed behavior

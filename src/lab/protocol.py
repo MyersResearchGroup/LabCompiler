@@ -24,7 +24,7 @@ from lab.model import (
     Wait,
 )
 from lab.samples import Location, Sample, SamplePlacement
-from lab.units import magnitude, temperature
+from lab.units import Quantity, magnitude, temperature, uL
 
 
 @dataclass(frozen=True)
@@ -92,6 +92,18 @@ class Protocol:
     @property
     def steps(self) -> tuple[Step, ...]:
         return tuple(self._steps)
+
+    def capacity(self, item: Plate | Well) -> Quantity:
+        """The declared working capacity of a plate's wells or of one well."""
+        if isinstance(item, Well):
+            resource = self._resources.get(self._location(item).resource)
+        elif isinstance(item, Plate) and item._owner is self._owner:
+            resource = self._resources.get(item.name)
+        else:
+            raise ValueError("A plate or well must belong to this protocol")
+        if resource is None:
+            raise ValueError("Unknown plate")
+        return resource.capacity * uL
 
     def plate(
         self,

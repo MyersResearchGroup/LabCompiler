@@ -22,6 +22,7 @@ from pydantic import (
 )
 
 from lab.liquid_classes import HamiltonLiquidClass
+from lab.plates.design import PlateDesign, well_target
 from lab.units import Quantity, parse_quantity, units
 
 # All quantities are finite. Concentrations can be molar or mass/volume;
@@ -107,3 +108,44 @@ class MixingConfig(ConfigModel):
     volume: Volume
     cycles: Annotated[int, Field(strict=True, gt=0)]
     liquid_class: NonemptyString
+
+
+WellName = Annotated[str, Field(strict=True, pattern=r"^[A-Z](?:[1-9]|[1-9][0-9])$")]
+
+
+class WellTargetConfig(ConfigModel):
+    """One well of a plate design: an optional material and solute concentrations."""
+
+    well: WellName
+    material: NonemptyString | None = None
+    concentrations: dict[NonemptyString, Concentration]
+
+
+class PlateDesignConfig(ConfigModel):
+    """A plate design as JSON or TOML; ``to_design()`` builds the Lab object."""
+
+    name: NonemptyString
+    shape: tuple[Annotated[int, Field(ge=1, le=26)], Annotated[int, Field(ge=1)]] = (8, 12)
+    final_volume: Volume
+    wells: Annotated[tuple[WellTargetConfig, ...], Field(min_length=1)]
+
+    def to_design(self) -> PlateDesign:
+        return PlateDesign.build(
+            self.name,
+            shape=self.shape,
+            final_volume=self.final_volume,
+            wells=(
+                well_target(w.well, material=w.material, concentrations=w.concentrations)
+                for w in self.wells
+            ),
+        )
+
+
+class PreparationConfig(ConfigModel):
+    """How a design is turned into operations; mirrors ``lab.plates.recipe.Settings``."""
+
+    strategy: Literal["direct", "serial", "auto"] = "auto"
+    concentrate: Annotated[Decimal, Field(ge=1, allow_inf_nan=False)] = Decimal(2)
+    serial_min_steps: Annotated[int, Field(strict=True, ge=2)] = 4
+    premix_min_group: Annotated[int, Field(strict=True, ge=2)] | None = None
+    premix_overage: Annotated[Decimal, Field(ge=1, allow_inf_nan=False)] = Decimal("1.1")
