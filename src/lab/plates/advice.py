@@ -1,16 +1,25 @@
 """Design-time advice: what a design would need before any protocol exists."""
 
 from collections.abc import Mapping
+from decimal import Decimal
 
 from lab.diagnostics import BELOW_TRUSTED_MINIMUM, Diagnostic, Diagnostics, Severity
 from lab.limits import PipettingLimits, smallest_covering
 from lab.plates.design import PlateDesign
 from lab.plates.patterns import find_replicate_groups, find_serial_dilutions, parallelize
 from lab.samples import Location
-from lab.units import Quantity, dilution_volume, magnitude, uL
+from lab.units import Quantity, dilution_volume, magnitude, uL, units
 
 SERIAL_DILUTION_AVAILABLE = "serial-dilution-available"
 PREMIX_AVAILABLE = "premix-available"
+_SHOWN = {"mole/liter": "umol/L", "gram/liter": "ug/mL"}
+
+
+def shown_concentration(magnitude_value: Decimal, unit: str) -> str:
+    """Present a canonical concentration in the bench units of its dimension."""
+    shown = _SHOWN[unit]
+    value = Decimal(str((magnitude_value * units(unit)).to(shown).magnitude)).normalize()
+    return f"{value:f} {shown.replace('umol/L', 'µM').replace('ug/mL', 'µg/mL')}"
 
 
 def advise_design(
@@ -62,13 +71,13 @@ def advise_design(
     for solute in design.solutes:
         candidates = find_serial_dilutions(design, solute, min_steps=serial_min_steps)
         for candidate in parallelize(candidates):
-            top = (candidate.top * 1).normalize()
             found.append(
                 Diagnostic(
                     severity=Severity.INFO,
                     code=SERIAL_DILUTION_AVAILABLE,
                     message=f"{solute}: {candidate.steps}-step {candidate.fold:f}-fold gradient "
-                    f"across {candidate.width} row(s) from {top:f} {candidate.unit} "
+                    f"across {candidate.width} row(s) from "
+                    f"{shown_concentration(candidate.top, candidate.unit)} "
                     "can be prepared as a serial dilution.",
                     locations=tuple(Location(design.name, w) for w in candidate.wells),
                 )

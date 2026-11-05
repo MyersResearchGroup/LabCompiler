@@ -121,10 +121,10 @@ def test_design_advice_names_small_doses_and_available_patterns():
     )
     serial = [f for f in findings if f.code == SERIAL_DILUTION_AVAILABLE]
     assert [f.message.split(" can be")[0] for f in serial] == [
-        "Sal: 3-step 2-fold gradient across 4 row(s) from 0.00001 mole/liter",
-        "Sal: 3-step 2-fold gradient across 4 row(s) from 0.0000142857142857143 mole/liter",
-        "Van: 8-step 2-fold gradient across 4 row(s) from 0.0001 mole/liter",
-        "Van: 5-step 2-fold gradient across 4 row(s) from 0.0001 mole/liter",
+        "Sal: 3-step 2-fold gradient across 4 row(s) from 10 µM",
+        "Sal: 3-step 2-fold gradient across 4 row(s) from 14.2857142857143 µM",
+        "Van: 8-step 2-fold gradient across 4 row(s) from 100 µM",
+        "Van: 5-step 2-fold gradient across 4 row(s) from 100 µM",
     ]
     premix = [f for f in findings if f.code == PREMIX_AVAILABLE]
     assert len(premix) == 24 and all(len(f.locations) == 4 for f in premix)
