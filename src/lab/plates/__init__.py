@@ -6,8 +6,10 @@ from lab.plates.arrange import (
     ConditionSpec,
     ControlSpec,
     GradientSpec,
+    InferredRequirements,
     Requirements,
     arrange,
+    infer_requirements,
 )
 from lab.plates.design import PlateDesign, Target, WellTarget, canonical_concentration, well_target
 from lab.plates.dilution import SerialDilutionPlan, plan_serial_dilution, record_serial_dilution
@@ -36,6 +38,7 @@ __all__ = [
     "ConditionSpec",
     "ControlSpec",
     "GradientSpec",
+    "InferredRequirements",
     "Mixing",
     "PlateDesign",
     "PremixPlan",
@@ -55,6 +58,7 @@ __all__ = [
     "canonical_concentration",
     "find_replicate_groups",
     "find_serial_dilutions",
+    "infer_requirements",
     "parallelize",
     "plan_premix",
     "plan_serial_dilution",

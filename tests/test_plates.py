@@ -21,6 +21,7 @@ from lab.plates import (
     assemble,
     find_replicate_groups,
     find_serial_dilutions,
+    infer_requirements,
     parallelize,
     plan_premix,
     plan_serial_dilution,
@@ -479,3 +480,42 @@ def test_auto_skips_infeasible_gradients_and_serial_reports_them():
             assert report.gradients == ()
             assert [reason[:16] for _, reason in report.skipped_gradients] == ["Peak volume 400 "]
             compile(p, to=None)
+
+
+def test_inferred_requirements_round_trip_an_arranged_plate_and_describe_a_hand_layout():
+    requirements = Requirements(
+        name="cultures",
+        final_volume=200 * uL,
+        materials=("strain / p1", "strain / p2"),
+        conditions=(
+            ConditionSpec(label="Sal 10", concentrations={"Sal": 10 * uM, "TMP": 3 * UG_ML}),
+        ),
+        gradient=GradientSpec(
+            solute="Van", top=100 * uM, fold=Decimal(2), steps=8, include_zero=True
+        ),
+        controls=(ControlSpec(label="blank", concentrations={"Van": 0 * uM, "Sal": 0 * uM}),),
+    )
+    inferred = infer_requirements(arrange(requirements).design)
+    assert inferred.exact and inferred.notes == ()
+    back = inferred.requirements
+    assert back is not None
+    assert back.materials == requirements.materials and back.replicates == 1
+    assert back.gradient is not None and (back.gradient.steps, back.gradient.include_zero) == (
+        8,
+        True,
+    )
+    assert [c.label for c in back.conditions] == ["Sal 10 µM, TMP 3 µg/mL"]
+    assert [(c.label, c.replicates) for c in back.controls] == [("Sal 0 µM, Van 0 µM", 1)]
+    assert back.well_count == requirements.well_count
+
+    hand = gradient_design(zero=True, sal=(Decimal(10), Decimal(25)))
+    inferred = infer_requirements(hand)
+    assert inferred.exact and inferred.requirements is not None
+    assert [c.label for c in inferred.requirements.conditions] == [
+        "Sal 10 µM, TMP 3 µg/mL",
+        "Sal 25 µM, TMP 3 µg/mL",
+    ]
+    assert (
+        infer_requirements(PlateDesign.build("e", final_volume=1 * uL, wells=[])).requirements
+        is None
+    )

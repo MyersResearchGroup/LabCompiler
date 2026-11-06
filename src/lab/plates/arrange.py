@@ -13,7 +13,8 @@ from decimal import Decimal
 from itertools import product
 
 from lab.plates.design import PlateDesign, Target, WellTarget, canonical_concentration, well_name
-from lab.units import Quantity, magnitude
+from lab.plates.patterns import SerialDilutionCandidate, find_serial_dilutions, parallelize
+from lab.units import Quantity, magnitude, uL, units
 
 
 def _targets(concentrations: Mapping[str, Quantity]) -> tuple[Target, ...]:
@@ -188,3 +189,126 @@ def arrange(requirements: Requirements) -> Arrangement:
         wells=tuple(wells),
     )
     return Arrangement(design=design, unused_wells=unused, rows=tuple(row_log))
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InferredRequirements:
+    """Requirements read back from a design, with whether they reproduce it exactly.
+
+    A design laid out by ``arrange()`` infers back to itself. A hand-made layout infers to the
+    nearest requirements: its longest gradient, the constant conditions along that gradient,
+    and every other well as a control; ``exact`` is False when arranging those would place
+    wells differently.
+    """
+
+    requirements: Requirements | None
+    exact: bool
+    gradients: tuple[SerialDilutionCandidate, ...]
+    notes: tuple[str, ...]
+
+
+def _label(targets: tuple[Target, ...]) -> str:
+    return ", ".join(f"{t.solute} {shown(t.magnitude, t.unit)}" for t in targets) or "blank"
+
+
+def shown(magnitude_value: Decimal, unit: str) -> str:
+    """A concentration in bench units: µM for molar targets, µg/mL for mass targets."""
+    shown_unit = {"mole/liter": "umol/L", "gram/liter": "ug/mL"}[unit]
+    value = Decimal(str((magnitude_value * units(unit)).to(shown_unit).magnitude)).normalize()
+    return f"{value:f} {'µM' if unit == 'mole/liter' else 'µg/mL'}"
+
+
+def infer_requirements(design: PlateDesign) -> InferredRequirements:
+    """Read materials, the gradient, conditions, controls, and replicates off a design."""
+    notes: list[str] = []
+    found = [
+        candidate
+        for solute in design.solutes
+        for candidate in parallelize(find_serial_dilutions(design, solute))
+    ]
+    if not design.wells:
+        return InferredRequirements(requirements=None, exact=False, gradients=(), notes=())
+    gradient_spec: GradientSpec | None = None
+    series_wells: dict[str, tuple[str, ...]] = {}  # well -> context key members
+    chosen: list[SerialDilutionCandidate] = []
+    if found:
+        solute = max(found, key=lambda c: (c.steps, c.width)).solute
+        chosen = [c for c in found if c.solute == solute]
+        longest = max(chosen, key=lambda c: c.steps)
+        include_zero = all(c.zero_wells for c in chosen)
+        gradient_spec = GradientSpec(
+            solute=solute,
+            top=longest.top * units(longest.unit),
+            fold=longest.fold,
+            steps=longest.steps,
+            include_zero=include_zero,
+        )
+        if len({c.steps for c in chosen}) > 1:
+            notes.append(
+                f"{solute} gradients differ in length ({', '.join(str(c.steps) for c in chosen)} "
+                "steps); the longest is used."
+            )
+        if len(found) > len(chosen):
+            others = sorted({c.solute for c in found if c.solute != solute})
+            notes.append(f"Gradients of {', '.join(others)} are left as individual wells.")
+        for candidate in chosen:
+            for well in (*candidate.wells, *candidate.zero_wells):
+                series_wells[well] = ()
+    conditions: dict[tuple[tuple[str, Decimal, str], ...], ConditionSpec] = {}
+    lanes_by_block: dict[tuple[str, tuple[tuple[str, Decimal, str], ...]], int] = {}
+    for candidate in chosen:
+        for lane in zip(*candidate.levels, strict=True):
+            top_well = design[lane[0]]
+            _, context = top_well.context(excluding=candidate.solute)
+            if context not in conditions:
+                targets = tuple(Target(solute=s, magnitude=m, unit=u) for s, m, u in context)
+                conditions[context] = ConditionSpec(
+                    label=_label(targets),
+                    concentrations={t.solute: t.quantity for t in targets},
+                )
+            key = (top_well.material or "", context)
+            lanes_by_block[key] = lanes_by_block.get(key, 0) + 1
+    controls: dict[tuple[tuple[str, Decimal, str], ...], list[WellTarget]] = {}
+    for target in design.wells:
+        if target.well in series_wells:
+            continue
+        _, context = target.context(ignore_material=True)
+        controls.setdefault(context, []).append(target)
+    materials = tuple(design.materials) or ("",)
+    control_specs = []
+    for context, members in controls.items():
+        targets = tuple(Target(solute=s, magnitude=m, unit=u) for s, m, u in context)
+        per_material = max(
+            sum(1 for w in members if (w.material or "") == material) for material in materials
+        )
+        control_specs.append(
+            ControlSpec(
+                label=_label(targets),
+                concentrations={t.solute: t.quantity for t in targets},
+                replicates=per_material,
+            )
+        )
+    replicates = max(lanes_by_block.values(), default=1)
+    requirements: Requirements | None = None
+    try:
+        requirements = Requirements(
+            name=design.name,
+            final_volume=design.final_volume_ul * uL,
+            materials=tuple(m for m in materials if m) or ("unassigned",),
+            conditions=tuple(conditions.values())
+            or (ConditionSpec(label="as painted", concentrations={}),),
+            gradient=gradient_spec,
+            controls=tuple(control_specs),
+            replicates=replicates,
+            shape=design.shape,
+        )
+        rebuilt = arrange(requirements).design
+        exact = {(w.well, w.material, w.targets) for w in rebuilt.wells} == {
+            (w.well, w.material, w.targets) for w in design.wells
+        }
+    except ValueError as exc:
+        notes.append(f"These requirements do not arrange on this plate: {exc}")
+        exact = False
+    return InferredRequirements(
+        requirements=requirements, exact=exact, gradients=tuple(found), notes=tuple(notes)
+    )
