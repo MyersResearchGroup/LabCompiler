@@ -515,7 +515,37 @@ def test_inferred_requirements_round_trip_an_arranged_plate_and_describe_a_hand_
         "Sal 10 µM, TMP 3 µg/mL",
         "Sal 25 µM, TMP 3 µg/mL",
     ]
+    assert all((c.steps, c.include_zero) == (8, True) for c in inferred.requirements.conditions)
     assert (
         infer_requirements(PlateDesign.build("e", final_volume=1 * uL, wells=[])).requirements
         is None
     )
+
+
+def test_conditions_can_shorten_or_extend_the_gradient():
+    requirements = Requirements(
+        name="cultures",
+        final_volume=200 * uL,
+        materials=("strain / p1",),
+        conditions=(
+            ConditionSpec(label="long", concentrations={"Sal": 10 * uM}),
+            ConditionSpec(
+                label="short", concentrations={"Sal": 25 * uM}, steps=5, include_zero=True
+            ),
+        ),
+        gradient=GradientSpec(solute="Van", top=100 * uM, fold=Decimal(2), steps=8),
+    )
+    assert requirements.well_count == 8 + 6
+    design = arrange(requirements).design
+    assert [w.well for w in design.row("A")] == [f"A{c}" for c in range(5, 13)]
+    assert [w.well for w in design.row("B")] == [f"B{c}" for c in range(7, 13)]
+    assert design["B7"].concentration("Van").magnitude == 0
+    assert design["B12"].concentration("Van").magnitude == Decimal("0.0001")
+    inferred = infer_requirements(design)
+    assert inferred.exact and inferred.requirements is not None
+    assert [(c.steps, c.include_zero) for c in inferred.requirements.conditions] == [
+        (8, False),
+        (5, True),
+    ]
+    with pytest.raises(ValueError, match="positive integer"):
+        ConditionSpec(label="bad", concentrations={}, steps=0)

@@ -42,21 +42,35 @@ class GradientSpec:
             raise ValueError("A gradient needs at least two levels.")
         canonical_concentration(self.top)
 
-    def levels(self) -> tuple[Target, ...]:
+    def levels(
+        self, *, steps: int | None = None, include_zero: bool | None = None
+    ) -> tuple[Target, ...]:
         """Targets from the top down, with an optional trailing zero control."""
         value, unit = canonical_concentration(self.top)
-        series = [value / self.fold**i for i in range(self.steps)]
-        if self.include_zero:
+        count = self.steps if steps is None else steps
+        zero = self.include_zero if include_zero is None else include_zero
+        series = [value / self.fold**i for i in range(count)]
+        if zero:
             series.append(Decimal(0))
         return tuple(Target(solute=self.solute, magnitude=v, unit=unit) for v in series)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ConditionSpec:
-    """Constant concentrations shared by a block of wells."""
+    """Constant concentrations shared by a block of wells.
+
+    ``steps`` and ``include_zero`` shorten or extend the plate's gradient for this condition
+    alone; left as None, the condition takes the gradient as specified.
+    """
 
     label: str
     concentrations: Mapping[str, Quantity]
+    steps: int | None = None
+    include_zero: bool | None = None
+
+    def __post_init__(self) -> None:
+        if self.steps is not None and (type(self.steps) is not int or self.steps < 1):
+            raise ValueError(f"{self.label}: steps must be a positive integer or None.")
 
     def targets(self) -> tuple[Target, ...]:
         return _targets(self.concentrations)
@@ -97,16 +111,24 @@ class Requirements:
                         f"{condition.label} fixes {self.gradient.solute}, the gradient solute."
                     )
 
+    def levels(self, condition: ConditionSpec) -> tuple[Target | None, ...]:
+        """The gradient levels one condition's series holds; one empty level without a gradient."""
+        if self.gradient is None:
+            return (None,)
+        return self.gradient.levels(steps=condition.steps, include_zero=condition.include_zero)
+
     @property
     def series_length(self) -> int:
-        return len(self.gradient.levels()) if self.gradient else 1
+        """The longest series any condition holds."""
+        return max(len(self.levels(condition)) for condition in self.conditions)
 
     @property
     def well_count(self) -> int:
         """The running count a design tool shows while requirements are edited."""
-        series = len(self.materials) * len(self.conditions) * self.series_length
+        series = sum(len(self.levels(condition)) for condition in self.conditions)
+        series *= len(self.materials) * self.replicates
         controls = sum(control.replicates for control in self.controls) * len(self.materials)
-        return series * self.replicates + controls
+        return series + controls
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -142,11 +164,7 @@ def arrange(requirements: Requirements) -> Arrangement:
         )
     wells: list[WellTarget] = []
     row_log: list[tuple[str, str, str]] = []
-    levels: tuple[Target | None, ...] = (
-        requirements.gradient.levels() if requirements.gradient else (None,)
-    )
     # Series occupy the rightmost columns of their rows; controls fill from the left.
-    series_start = columns - len(levels)
     limit = dict.fromkeys(range(rows), columns)
     left = dict.fromkeys(range(rows), 0)
     for row_index, (material, condition) in enumerate(
@@ -154,6 +172,8 @@ def arrange(requirements: Requirements) -> Arrangement:
         for combination in product(requirements.materials, requirements.conditions)
         for _ in range(requirements.replicates)
     ):
+        levels = requirements.levels(condition)
+        series_start = columns - len(levels)
         row_log.append((chr(65 + row_index), material, condition.label))
         limit[row_index] = series_start
         for offset, level in enumerate(reversed(levels)):
@@ -235,19 +255,13 @@ def infer_requirements(design: PlateDesign) -> InferredRequirements:
         solute = max(found, key=lambda c: (c.steps, c.width)).solute
         chosen = [c for c in found if c.solute == solute]
         longest = max(chosen, key=lambda c: c.steps)
-        include_zero = all(c.zero_wells for c in chosen)
         gradient_spec = GradientSpec(
             solute=solute,
             top=longest.top * units(longest.unit),
             fold=longest.fold,
             steps=longest.steps,
-            include_zero=include_zero,
+            include_zero=bool(longest.zero_wells),
         )
-        if len({c.steps for c in chosen}) > 1:
-            notes.append(
-                f"{solute} gradients differ in length ({', '.join(str(c.steps) for c in chosen)} "
-                "steps); the longest is used."
-            )
         if len(found) > len(chosen):
             others = sorted({c.solute for c in found if c.solute != solute})
             notes.append(f"Gradients of {', '.join(others)} are left as individual wells.")
@@ -265,6 +279,8 @@ def infer_requirements(design: PlateDesign) -> InferredRequirements:
                 conditions[context] = ConditionSpec(
                     label=_label(targets),
                     concentrations={t.solute: t.quantity for t in targets},
+                    steps=candidate.steps,
+                    include_zero=bool(candidate.zero_wells),
                 )
             key = (top_well.material or "", context)
             lanes_by_block[key] = lanes_by_block.get(key, 0) + 1
@@ -306,6 +322,11 @@ def infer_requirements(design: PlateDesign) -> InferredRequirements:
         exact = {(w.well, w.material, w.targets) for w in rebuilt.wells} == {
             (w.well, w.material, w.targets) for w in design.wells
         }
+        if not exact and control_specs:
+            notes.append(
+                "Arranging places controls from the left of the shortest rows, "
+                "so their positions differ from this plate."
+            )
     except ValueError as exc:
         notes.append(f"These requirements do not arrange on this plate: {exc}")
         exact = False
