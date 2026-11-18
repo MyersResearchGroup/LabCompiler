@@ -10,6 +10,7 @@ from lab.plates import (
     ConditionSpec,
     ControlSpec,
     GradientSpec,
+    Material,
     PlateDesign,
     Requirements,
     Settings,
@@ -83,7 +84,10 @@ def test_design_normalizes_units_sorts_targets_and_rejects_duplicates():
         PlateDesign.build("p", final_volume=1 * uL, wells=[well_target("I1", concentrations={})])
     design = gradient_design()
     assert design.solutes == ("Sal", "TMP", "Van")
-    assert design.materials == ("strain / p1", "strain / p2")
+    assert [m.name for m in design.materials] == ["strain / p1", "strain / p2"]
+    assert design.material("strain / p1") == Material(name="strain / p1")
+    with pytest.raises(KeyError):
+        design.material("strain / p3")
     assert [w.well for w in design.row("A")] == [f"A{c}" for c in range(5, 13)]
     assert [w.well for w in design.column(12)] == ["A12", "B12", "C12", "D12"]
     assert "A12" in design and "H1" not in design
@@ -146,11 +150,49 @@ def test_detection_tolerates_rounded_ratios_and_requires_min_steps():
     assert five_fold.fold == Decimal(5) and five_fold.levels == (("B6",), ("B5",))
 
 
+def test_materials_are_records_with_a_name_and_optional_structure():
+    material = Material(name="BL21 / pA", strain="BL21", construct="pA")
+    assert material.identity == "BL21 / pA"
+    with_design = Material(name="pA", design="https://example.org/designs/pA")
+    assert with_design.identity == "https://example.org/designs/pA"
+    assert well_target("A1", material="pA", concentrations={}).material == Material(name="pA")
+    assert well_target("A1", material=None, concentrations={}).material is None
+    for bad in ({"name": " "}, {"name": "x", "strain": ""}, {"name": "x", "design": "not an iri"}):
+        with pytest.raises(ValueError):
+            Material(**bad)
+    with pytest.raises(TypeError):
+        well_target("A1", material=3, concentrations={})  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="both named"):
+        PlateDesign.build(
+            "p",
+            final_volume=1 * uL,
+            wells=[
+                well_target("A1", material=material, concentrations={}),
+                well_target("A2", material="BL21 / pA", concentrations={}),
+            ],
+        )
+    requirements = Requirements(
+        name="r",
+        final_volume=200 * uL,
+        materials=("pA", material),
+        conditions=(ConditionSpec(label="c", concentrations={"Van": 1 * uM}),),
+    )
+    assert requirements.materials == (Material(name="pA"), material)
+    with pytest.raises(ValueError, match="distinct names"):
+        Requirements(
+            name="r",
+            final_volume=200 * uL,
+            materials=("pA", "pA"),
+            conditions=(ConditionSpec(label="c", concentrations={"Van": 1 * uM}),),
+        )
+
+
 def test_replicate_groups_ignore_material():
     groups = find_replicate_groups(gradient_design())
     assert len(groups) == 8
     assert all(len(g.wells) == 4 for g in groups)
-    assert {g.materials for g in groups} == {("strain / p1",) * 2 + ("strain / p2",) * 2}
+    p1, p2 = Material(name="strain / p1"), Material(name="strain / p2")
+    assert {g.materials for g in groups} == {(p1,) * 2 + (p2,) * 2}
 
 
 def test_serial_dilution_arithmetic_and_concentrate_factor():
@@ -266,9 +308,9 @@ def test_arrange_reproduces_a_row_wise_gradient_layout_and_reports_overflow():
     design = arrangement.design
     assert design["A12"].concentration("Van").magnitude == Decimal("0.0001")
     assert design["A5"].concentration("Van").magnitude == Decimal("0.00000078125")
-    assert design["B12"].material == "strain / p1"
+    assert design["B12"].material == Material(name="strain / p1")
     assert design["B12"].concentration("Sal").magnitude == Decimal("0.000025")
-    assert design["C12"].material == "strain / p2"
+    assert design["C12"].material == Material(name="strain / p2")
     assert {w.well for w in design.wells if w.concentration("TMP") is None} == {"A1", "B1"}
     assert arrangement.rows[:2] == (("A", "strain / p1", "Sal 10"), ("B", "strain / p1", "Sal 25"))
     assert len(arrangement.unused_wells) == 96 - requirements.well_count

@@ -231,7 +231,7 @@ def assemble(
 ) -> AssemblyReport:
     """Record the preparation of ``design`` into ``plate`` and report what was decided.
 
-    ``inocula`` maps each design material to its source well. ``waste`` is required for
+    ``inocula`` maps each design material's name to its source well. ``waste`` is required for
     serial dilutions and ``tubes`` for premixes. Gradients draw their diluent from
     ``diluent`` when given, otherwise from ``medium``; a separate well keeps one reservoir
     from running dry, since every gradient lane discards one transfer volume to waste.
@@ -241,7 +241,7 @@ def assemble(
     final = magnitude(settings.final_volume, "microliter")
     if design.final_volume_ul != final:
         raise ValueError("Settings and design disagree on the final volume")
-    if missing := set(design.materials) - set(inocula):
+    if missing := {m.name for m in design.materials} - set(inocula):
         raise ValueError(f"No inoculum source for {sorted(missing)}")
     if type(settings.serial_min_steps) is not int or settings.serial_min_steps < 2:
         raise ValueError("serial_min_steps must be an integer of at least 2")
@@ -352,7 +352,7 @@ def assemble(
     for well_plan in plans:
         if well_plan.target.material is None or not well_plan.inoculum_ul:
             continue
-        source = inocula[well_plan.target.material]
+        source = inocula[well_plan.target.material.name]
         destination = plate[well_plan.target.well]
         if settings.source_mix is not None:
             p.mix(

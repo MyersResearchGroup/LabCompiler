@@ -56,12 +56,12 @@ def protocol(design: PlateDesign, config: ProtocolConfig) -> tuple[Protocol, Ass
     for plan in report.wells:
         target = plan.target
         assert target.material is not None
-        culture = supplied.culture_wells[target.material]
+        culture = supplied.culture_wells[target.material.name]
         p.add_sample(
             Sample(
                 id=f"culture-{target.well}",
                 material_identity=culture.plasmid,
-                label=f"{target.well}: {target.material}; "
+                label=f"{target.well}: {target.material.name}; "
                 + ", ".join(f"{t.solute} {t.quantity:~P}" for t in target.targets),
                 parent_ids=(f"inoculum-{culture.well}",),
             ),

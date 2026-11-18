@@ -12,7 +12,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from itertools import product
 
-from lab.plates.design import PlateDesign, Target, WellTarget, canonical_concentration, well_name
+from lab.plates.design import (
+    Material,
+    PlateDesign,
+    Target,
+    WellTarget,
+    as_material,
+    canonical_concentration,
+    well_name,
+)
 from lab.plates.patterns import SerialDilutionCandidate, find_serial_dilutions, parallelize
 from lab.units import Quantity, magnitude, uL, units
 
@@ -92,7 +100,7 @@ class ControlSpec:
 class Requirements:
     name: str
     final_volume: Quantity
-    materials: tuple[str, ...]
+    materials: tuple[Material, ...]
     conditions: tuple[ConditionSpec, ...]
     gradient: GradientSpec | None = None
     controls: tuple[ControlSpec, ...] = ()
@@ -100,8 +108,15 @@ class Requirements:
     shape: tuple[int, int] = (8, 12)
 
     def __post_init__(self) -> None:
+        # Names are accepted for materials; they become Material records.
+        object.__setattr__(
+            self, "materials", tuple(m for m in (as_material(v) for v in self.materials) if m)
+        )
         if not self.materials or not self.conditions:
             raise ValueError("Requirements need at least one material and one condition set.")
+        names = [m.name for m in self.materials]
+        if len(set(names)) != len(names):
+            raise ValueError("Requirements materials must have distinct names.")
         if type(self.replicates) is not int or self.replicates < 1:
             raise ValueError("Replicates must be a positive integer.")
         if self.gradient is not None:
@@ -174,7 +189,7 @@ def arrange(requirements: Requirements) -> Arrangement:
     ):
         levels = requirements.levels(condition)
         series_start = columns - len(levels)
-        row_log.append((chr(65 + row_index), material, condition.label))
+        row_log.append((chr(65 + row_index), material.name, condition.label))
         limit[row_index] = series_start
         for offset, level in enumerate(reversed(levels)):
             targets = condition.targets() + ((level,) if level is not None else ())
@@ -269,7 +284,7 @@ def infer_requirements(design: PlateDesign) -> InferredRequirements:
             for well in (*candidate.wells, *candidate.zero_wells):
                 series_wells[well] = ()
     conditions: dict[tuple[tuple[str, Decimal, str], ...], ConditionSpec] = {}
-    lanes_by_block: dict[tuple[str, tuple[tuple[str, Decimal, str], ...]], int] = {}
+    lanes_by_block: dict[tuple[Material | None, tuple[tuple[str, Decimal, str], ...]], int] = {}
     for candidate in chosen:
         for lane in zip(*candidate.levels, strict=True):
             top_well = design[lane[0]]
@@ -282,7 +297,7 @@ def infer_requirements(design: PlateDesign) -> InferredRequirements:
                     steps=candidate.steps,
                     include_zero=bool(candidate.zero_wells),
                 )
-            key = (top_well.material or "", context)
+            key = (top_well.material, context)
             lanes_by_block[key] = lanes_by_block.get(key, 0) + 1
     controls: dict[tuple[tuple[str, Decimal, str], ...], list[WellTarget]] = {}
     for target in design.wells:
@@ -290,12 +305,12 @@ def infer_requirements(design: PlateDesign) -> InferredRequirements:
             continue
         _, context = target.context(ignore_material=True)
         controls.setdefault(context, []).append(target)
-    materials = tuple(design.materials) or ("",)
+    materials: tuple[Material | None, ...] = tuple(design.materials) or (None,)
     control_specs = []
     for context, members in controls.items():
         targets = tuple(Target(solute=s, magnitude=m, unit=u) for s, m, u in context)
         per_material = max(
-            sum(1 for w in members if (w.material or "") == material) for material in materials
+            sum(1 for w in members if w.material == material) for material in materials
         )
         control_specs.append(
             ControlSpec(
@@ -310,7 +325,7 @@ def infer_requirements(design: PlateDesign) -> InferredRequirements:
         requirements = Requirements(
             name=design.name,
             final_volume=design.final_volume_ul * uL,
-            materials=tuple(m for m in materials if m) or ("unassigned",),
+            materials=tuple(m for m in materials if m) or (Material(name="unassigned"),),
             conditions=tuple(conditions.values())
             or (ConditionSpec(label="as painted", concentrations={}),),
             gradient=gradient_spec,

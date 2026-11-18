@@ -41,10 +41,17 @@ design.solutes  # ('Sal', 'TMP', 'Van')
 
 Concentrations are normalized to Decimal `mole/liter` or `gram/liter`, the dimensions
 `lab.units.dilution_volume()` accepts; the two are never converted into each other. A target of
-zero is kept because it marks an intended absence, for example a gradient's zero control. The
-material is free text; a plugin such as `lab.plugins.lmsf` gives it a convention
-(`"strain / plasmid"`). `lab.config.PlateDesignConfig` is the typed JSON or TOML form of a design
-for applications installed with `lab-compiler[config]`.
+zero is kept because it marks an intended absence, for example a gradient's zero control.
+
+A material is a `Material`: a display `name` plus optional `strain`, `construct` (a plasmid or
+other genetic construct), and `design` (an SBOL design IRI). `well_target(material="plasmid-1")`
+accepts a bare name and makes the record for you; two materials with the same name must be the
+same record. `design.materials` lists the distinct records by name and `design.material(name)`
+looks one up. Nothing in the name is parsed: `lab.plugins.lmsf` builds its materials from the
+sheet's strain and plasmid columns and reads them back from those attributes.
+`lab.config.PlateDesignConfig` is the typed JSON or TOML form of a design for applications
+installed with `lab-compiler[config]`; there a well's `material` is a name or a table with
+`name`, `strain`, `construct`, and `design`.
 
 ## Patterns in a design
 
@@ -225,7 +232,7 @@ source also holds, so nothing foreign is carried back into the source: medium ma
 wells on one tip, a first additive may follow it into those wells on one tip, but the first well
 that already holds a second additive forces a fresh tip. Declare what a source is made of with
 `load(..., components=("medium", "Van"))`; a fill without components is one component named by
-its material text.
+the text it was loaded as.
 
 A pre-wetting stroke is `prewet(p, source, volume=...)`: a one-cycle mix at the source that
 leaves the volume accounting unchanged and, under a reuse policy, keeps the tip for the moves

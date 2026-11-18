@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-from lab.plates.design import Context, PlateDesign, WellTarget
+from lab.plates.design import Context, Material, PlateDesign, WellTarget
 
 CandidateAxis = Literal["row", "column", "set"]
 
@@ -249,7 +249,7 @@ class ReplicateGroup:
 
     context: Context
     wells: tuple[str, ...]
-    materials: tuple[str | None, ...]
+    materials: tuple[Material | None, ...]
 
 
 def find_replicate_groups(design: PlateDesign, *, min_size: int = 2) -> tuple[ReplicateGroup, ...]:

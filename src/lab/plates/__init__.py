@@ -11,7 +11,15 @@ from lab.plates.arrange import (
     arrange,
     infer_requirements,
 )
-from lab.plates.design import PlateDesign, Target, WellTarget, canonical_concentration, well_target
+from lab.plates.design import (
+    Material,
+    PlateDesign,
+    Target,
+    WellTarget,
+    as_material,
+    canonical_concentration,
+    well_target,
+)
 from lab.plates.dilution import SerialDilutionPlan, plan_serial_dilution, record_serial_dilution
 from lab.plates.patterns import (
     ReplicateGroup,
@@ -39,6 +47,7 @@ __all__ = [
     "ControlSpec",
     "GradientSpec",
     "InferredRequirements",
+    "Material",
     "Mixing",
     "PlateDesign",
     "PremixPlan",
@@ -54,6 +63,7 @@ __all__ = [
     "WellTarget",
     "advise_design",
     "arrange",
+    "as_material",
     "assemble",
     "canonical_concentration",
     "find_replicate_groups",

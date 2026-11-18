@@ -26,7 +26,7 @@ from lab.config import (
 from lab.deck import Deck
 from lab.liquid_classes import LiquidClassSpec
 from lab.plates import Mixing, Settings, Stock, Strategy
-from lab.plugins.lmsf import material_name
+from lab.plugins.lmsf import lmsf_material
 from lab.units import dilution_volume, magnitude
 
 WellName = Annotated[str, Field(strict=True, pattern=r"^[A-H](?:[1-9]|1[0-2])$")]
@@ -242,15 +242,15 @@ def sources(p: Protocol, config: ProtocolConfig, classes: dict[str, LiquidClassS
     inocula: dict[str, Well] = {}
     culture_wells: dict[str, CultureConfig] = {}
     for culture in config.cultures:
-        material = material_name(culture.strain, culture.plasmid)
+        material = lmsf_material(culture.strain, culture.plasmid)
         p.load(
             reagents[culture.well],
-            material,
+            material.name,
             volume=culture.volume,
-            components=(config.medium.name, material),
+            components=(config.medium.name, material.name),
         )
-        inocula[material] = reagents[culture.well]
-        culture_wells[material] = culture
+        inocula[material.name] = reagents[culture.well]
+        culture_wells[material.name] = culture
     return Sources(
         medium=media["A1"],
         diluent=diluent,

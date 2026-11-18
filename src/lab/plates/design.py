@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, Self
 
+from lab._identifiers import require_iri
 from lab.units import Quantity, magnitude, units
 
 _DIMENSIONS = {
@@ -60,7 +61,45 @@ class Target:
         return self.magnitude * units(self.unit)
 
 
-Context = tuple[str | None, tuple[tuple[str, Decimal, str], ...]]
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Material:
+    """What a well is inoculated with: a culture, a sample, or any named biological input.
+
+    ``name`` is how people and the worksheet refer to it. The attributes are optional and
+    carry whatever structure the lab tracks: a ``strain``, a ``construct`` such as a plasmid,
+    and a ``design`` IRI for an SBOL record.
+    """
+
+    name: str
+    strain: str | None = None
+    construct: str | None = None
+    design: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("A material needs a name.")
+        for label, value in (("strain", self.strain), ("construct", self.construct)):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{self.name}: {label} must be nonempty text or None.")
+        if self.design is not None:
+            require_iri(self.design)
+
+    @property
+    def identity(self) -> str:
+        """The identity a sample records for this material: its design IRI, else its name."""
+        return self.design or self.name
+
+
+def as_material(value: "Material | str | None") -> Material | None:
+    """Accept a Material or a bare name."""
+    if value is None or isinstance(value, Material):
+        return value
+    if isinstance(value, str):
+        return Material(name=value)
+    raise TypeError("A material must be a Material, a name, or None.")
+
+
+Context = tuple[Material | None, tuple[tuple[str, Decimal, str], ...]]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -68,13 +107,13 @@ class WellTarget:
     """What one well must contain at the end: a material and solute concentrations."""
 
     well: str
-    material: str | None
+    material: Material | None
     targets: tuple[Target, ...]
 
     def __post_init__(self) -> None:
         coordinates(self.well)
-        if self.material is not None and not self.material.strip():
-            raise ValueError(f"{self.well}: a material must be nonempty text or None.")
+        if self.material is not None and not isinstance(self.material, Material):
+            raise TypeError(f"{self.well}: material must be a Material or None.")
         if not isinstance(self.targets, tuple):
             raise TypeError("Targets must be a tuple of Target objects.")
         solutes = [target.solute for target in self.targets]
@@ -106,14 +145,20 @@ class WellTarget:
 
 
 def well_target(
-    well: str, *, material: str | None = None, concentrations: Mapping[str, Quantity]
+    well: str,
+    *,
+    material: Material | str | None = None,
+    concentrations: Mapping[str, Quantity],
 ) -> WellTarget:
-    """Build a WellTarget from unit-bearing quantities, for example ``{"Van": 100 * uM}``."""
+    """Build a WellTarget from unit-bearing quantities, for example ``{"Van": 100 * uM}``.
+
+    ``material`` may be a ``Material`` or just its name.
+    """
     targets = []
     for solute, quantity in concentrations.items():
         value, unit = canonical_concentration(quantity)
         targets.append(Target(solute=solute, magnitude=value, unit=unit))
-    return WellTarget(well=well, material=material, targets=tuple(targets))
+    return WellTarget(well=well, material=as_material(material), targets=tuple(targets))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -136,6 +181,7 @@ class PlateDesign:
         if not isinstance(self.wells, tuple):
             raise TypeError("Wells must be a tuple of WellTarget objects.")
         seen: set[str] = set()
+        by_name: dict[str, Material] = {}
         for target in self.wells:
             row, column = coordinates(target.well)
             if not (0 <= row < rows and 0 <= column < columns):
@@ -143,6 +189,9 @@ class PlateDesign:
             if target.well in seen:
                 raise ValueError(f"{target.well} is specified twice.")
             seen.add(target.well)
+            material = target.material
+            if material is not None and by_name.setdefault(material.name, material) != material:
+                raise ValueError(f"Two different materials are both named {material.name!r}.")
         if (
             not isinstance(self.final_volume_ul, Decimal)
             or not self.final_volume_ul.is_finite()
@@ -180,8 +229,17 @@ class PlateDesign:
         return tuple(sorted({t.solute for w in self.wells for t in w.targets}))
 
     @property
-    def materials(self) -> tuple[str, ...]:
-        return tuple(sorted({w.material for w in self.wells if w.material is not None}))
+    def materials(self) -> tuple[Material, ...]:
+        """The distinct materials in use, by name."""
+        return tuple(
+            sorted({w.material for w in self.wells if w.material is not None}, key=lambda m: m.name)
+        )
+
+    def material(self, name: str) -> Material:
+        for candidate in self.materials:
+            if candidate.name == name:
+                return candidate
+        raise KeyError(name)
 
     def row(self, row: str) -> tuple[WellTarget, ...]:
         """Present wells in one row, in column order."""

@@ -10,8 +10,8 @@ import pytest
 from pydantic import ValidationError
 
 from lab import uL
-from lab.plates import PlateDesign, find_serial_dilutions, parallelize, well_target
-from lab.plugins.lmsf import Condition, material_name, read_layout, split_material, write_layout
+from lab.plates import Material, PlateDesign, find_serial_dilutions, parallelize, well_target
+from lab.plugins.lmsf import Condition, lmsf_material, read_layout, split_material, write_layout
 from lab.units import units
 
 CSV = Path(__file__).resolve().parents[1] / "examples/concentration_series/layout.csv"
@@ -21,7 +21,11 @@ def test_layout_round_trips_byte_for_byte_and_describes_the_plate():
     text = CSV.read_text()
     design = read_layout(text, name="cultures", final_volume=200 * uL)
     assert len(design.wells) == 96 and design.solutes == ("Sal", "TMP", "Van")
-    assert design.materials == tuple(f"example-strain / example-plasmid-{i}" for i in range(1, 5))
+    assert [m.name for m in design.materials] == [
+        f"example-strain / example-plasmid-{i}" for i in range(1, 5)
+    ]
+    assert design.materials[0].strain == "example-strain"
+    assert design.materials[0].construct == "example-plasmid-1"
     a5 = design["A5"]
     assert a5.concentration("Van").quantity == units("0.78125 umol/liter")
     assert a5.concentration("TMP").unit == "gram/liter"
@@ -45,9 +49,12 @@ def test_condition_model_parses_typed_records_and_round_trips_source_columns():
     assert saved["inducer1Concentration"] == "0.78125"
     assert row.inducer1_concentration * row.inducer1_units == units("0.78125 umol/liter")
     assert Condition.model_validate_json(row.model_dump_json(by_alias=True)) == row
-    assert split_material(material_name("s", "p")) == ("s", "p")
-    with pytest.raises(ValueError, match="strain / plasmid"):
-        split_material("no separator")
+    assert split_material(lmsf_material("s", "p")) == ("s", "p")
+    assert split_material(Material(name="s / p")) == ("s", "p")
+    with pytest.raises(ValueError, match="no strain and plasmid"):
+        split_material(Material(name="no separator"))
+    with pytest.raises(ValueError, match="need a material"):
+        split_material(None)
 
 
 @pytest.mark.parametrize(

@@ -377,7 +377,7 @@ def test_explicit_subset_preserves_requested_order_and_culture_assignments():
     selected = cli.select(design(config=config), config.wells)
     assert [well.well for well in selected.wells] == ["H12", "A1"]
     p, report = recipe.protocol(selected, config)
-    assert [plan.target.material for plan in report.wells] == [
+    assert [plan.target.material.name for plan in report.wells] == [
         "example-strain / example-plasmid-4",
         "example-strain / example-plasmid-1",
     ]

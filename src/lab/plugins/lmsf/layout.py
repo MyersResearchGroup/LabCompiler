@@ -8,7 +8,7 @@ from typing import Annotated, Self
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 from lab.config import ConcentrationUnit, ConfigModel, NonemptyString, NonnegativeDecimal
-from lab.plates.design import PlateDesign, WellTarget, coordinates, well_target
+from lab.plates.design import Material, PlateDesign, WellTarget, coordinates, well_target
 from lab.units import Quantity, number, units
 
 LAYOUT_COLUMNS = (
@@ -72,7 +72,7 @@ class Condition(ConfigModel):
     def to_well_target(self) -> WellTarget:
         return well_target(
             self.well,
-            material=material_name(self.strain, self.plasmid),
+            material=lmsf_material(self.strain, self.plasmid),
             concentrations={
                 self.inducer1_id: self.inducer1_concentration * self.inducer1_units,
                 self.inducer2_id: self.inducer2_concentration * self.inducer2_units,
@@ -81,18 +81,20 @@ class Condition(ConfigModel):
         )
 
 
-def material_name(strain: str, plasmid: str) -> str:
-    """The design material text for one strain/plasmid pair."""
-    return f"{strain} / {plasmid}"
+def lmsf_material(strain: str, plasmid: str) -> Material:
+    """The design material for one strain/plasmid pair; the name joins them for display."""
+    return Material(name=f"{strain} / {plasmid}", strain=strain, construct=plasmid)
 
 
-def split_material(material: str | None) -> tuple[str, str]:
-    """Recover (strain, plasmid) from ``material_name`` text."""
+def split_material(material: Material | None) -> tuple[str, str]:
+    """The (strain, plasmid) of a material: its attributes, or its name split on ' / '."""
     if material is None:
-        raise ValueError("LMSF rows need a strain and plasmid for every well")
-    strain, separator, plasmid = material.partition(" / ")
+        raise ValueError("LMSF rows need a material for every well")
+    if material.strain and material.construct:
+        return material.strain, material.construct
+    strain, separator, plasmid = material.name.partition(" / ")
     if not separator or not strain or not plasmid:
-        raise ValueError(f"{material!r} is not 'strain / plasmid' text")
+        raise ValueError(f"{material.name!r} has no strain and plasmid")
     return strain, plasmid
 
 

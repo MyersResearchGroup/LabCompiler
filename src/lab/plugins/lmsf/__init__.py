@@ -7,7 +7,7 @@ solute targets to each well of a 96-well plate.
 from lab.plugins.lmsf.layout import (
     LAYOUT_COLUMNS,
     Condition,
-    material_name,
+    lmsf_material,
     read_layout,
     split_material,
     write_layout,
@@ -16,7 +16,7 @@ from lab.plugins.lmsf.layout import (
 __all__ = [
     "LAYOUT_COLUMNS",
     "Condition",
-    "material_name",
+    "lmsf_material",
     "read_layout",
     "split_material",
     "write_layout",
