@@ -67,22 +67,35 @@ class Material:
 
     ``name`` is how people and the worksheet refer to it. The attributes are optional and
     carry whatever structure the lab tracks: a ``strain``, a ``construct`` such as a plasmid,
-    and a ``design`` IRI for an SBOL record.
+    and a ``design`` IRI for an SBOL record. A material given a strain or construct and no
+    name is named by them, ``"strain / construct"``, so the name never repeats what the
+    attributes already say.
     """
 
-    name: str
+    name: str = ""
     strain: str | None = None
     construct: str | None = None
     design: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.name, str) or not self.name.strip():
-            raise ValueError("A material needs a name.")
         for label, value in (("strain", self.strain), ("construct", self.construct)):
             if value is not None and (not isinstance(value, str) or not value.strip()):
-                raise ValueError(f"{self.name}: {label} must be nonempty text or None.")
+                raise ValueError(f"A material's {label} must be nonempty text or None.")
+        if not isinstance(self.name, str):
+            raise TypeError("A material's name must be text.")
+        if not self.name.strip():
+            derived = " / ".join(part for part in (self.strain, self.construct) if part)
+            if not derived:
+                raise ValueError("A material needs a name, a strain, or a construct.")
+            object.__setattr__(self, "name", derived)
         if self.design is not None:
             require_iri(self.design)
+
+    @property
+    def named(self) -> bool:
+        """Whether the name says more than the strain and construct do."""
+        derived = " / ".join(part for part in (self.strain, self.construct) if part)
+        return self.name != derived
 
     @property
     def identity(self) -> str:

@@ -44,9 +44,10 @@ Concentrations are normalized to Decimal `mole/liter` or `gram/liter`, the dimen
 zero is kept because it marks an intended absence, for example a gradient's zero control.
 
 A material is a `Material`: a display `name` plus optional `strain`, `construct` (a plasmid or
-other genetic construct), and `design` (an SBOL design IRI). `well_target(material="plasmid-1")`
-accepts a bare name and makes the record for you; two materials with the same name must be the
-same record. `design.materials` lists the distinct records by name and `design.material(name)`
+other genetic construct), and `design` (an SBOL design IRI). A material given a strain or
+construct and no name is named by them, `"strain / construct"`, so `Material(strain="BL21",
+construct="pA")` is called `BL21 / pA`. `well_target(material="plasmid-1")` accepts a bare
+name and makes the record for you; two materials with the same name must be the same record. `design.materials` lists the distinct records by name and `design.material(name)`
 looks one up. Nothing in the name is parsed: `lab.plugins.lmsf` builds its materials from the
 sheet's strain and plasmid columns and reads them back from those attributes.
 `lab.config.PlateDesignConfig` is the typed JSON or TOML form of a design for applications

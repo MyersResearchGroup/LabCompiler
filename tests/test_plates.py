@@ -151,13 +151,22 @@ def test_detection_tolerates_rounded_ratios_and_requires_min_steps():
 
 
 def test_materials_are_records_with_a_name_and_optional_structure():
-    material = Material(name="BL21 / pA", strain="BL21", construct="pA")
-    assert material.identity == "BL21 / pA"
+    material = Material(strain="BL21", construct="pA")
+    assert material.name == "BL21 / pA" and material.identity == "BL21 / pA"
+    assert not material.named
+    assert material == Material(name="BL21 / pA", strain="BL21", construct="pA")
+    assert Material(construct="pA").name == "pA" and Material(strain="BL21").name == "BL21"
+    assert Material(name="culture 1", strain="BL21").named
     with_design = Material(name="pA", design="https://example.org/designs/pA")
     assert with_design.identity == "https://example.org/designs/pA"
     assert well_target("A1", material="pA", concentrations={}).material == Material(name="pA")
     assert well_target("A1", material=None, concentrations={}).material is None
-    for bad in ({"name": " "}, {"name": "x", "strain": ""}, {"name": "x", "design": "not an iri"}):
+    for bad in (
+        {"name": " "},
+        {},
+        {"name": "x", "strain": ""},
+        {"name": "x", "design": "not an iri"},
+    ):
         with pytest.raises(ValueError):
             Material(**bad)
     with pytest.raises(TypeError):

@@ -82,8 +82,8 @@ class Condition(ConfigModel):
 
 
 def lmsf_material(strain: str, plasmid: str) -> Material:
-    """The design material for one strain/plasmid pair; the name joins them for display."""
-    return Material(name=f"{strain} / {plasmid}", strain=strain, construct=plasmid)
+    """The design material for one strain/plasmid pair, named by them."""
+    return Material(strain=strain, construct=plasmid)
 
 
 def split_material(material: Material | None) -> tuple[str, str]:

@@ -26,6 +26,7 @@ def test_layout_round_trips_byte_for_byte_and_describes_the_plate():
     ]
     assert design.materials[0].strain == "example-strain"
     assert design.materials[0].construct == "example-plasmid-1"
+    assert not design.materials[0].named
     a5 = design["A5"]
     assert a5.concentration("Van").quantity == units("0.78125 umol/liter")
     assert a5.concentration("TMP").unit == "gram/liter"
