@@ -74,9 +74,14 @@ def test_direct_dosing_below_the_trusted_floor_is_an_advisory_not_an_error():
     assert "Advisories" not in compile(p, to=None).files["protocol.html"]
 
 
-def test_serial_strategy_removes_the_small_dose_and_robots_apply_their_own_floors():
+def test_serial_strategy_removes_the_small_dose():
     p, config = example("auto", warn_below="2 uL")
     assert compile(p, to=None, warn_below=config.preparation.warn_below).diagnostics == ()
+
+
+@pytest.mark.integration
+def test_robots_apply_their_own_floors():
+    pytest.importorskip("opentrons_shared_data")
     direct, config = example("direct")
     bundle = compile(direct, deck=config.deck, liquid_handler=LiquidHandler.OT2, to=None)
     assert [d.message.split(";")[0] for d in bundle.diagnostics] == [
