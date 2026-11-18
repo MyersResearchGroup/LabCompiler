@@ -12,12 +12,14 @@ from typing import Protocol as Interface
 import lab.documents as documents
 from lab._version import __version__
 from lab.deck import Deck
-from lab.model import Distribute, Mix, RecordedProtocol, TargetPlan, Transfer, encode
+from lab.diagnostics import Diagnostic, advise
+from lab.model import LIQUID_STEPS, RecordedProtocol, TargetPlan, TipPolicy, encode
 from lab.protocol import Protocol
 from lab.samples import Location, OutputManifest
 from lab.targets.liquid_handler import LiquidHandler
 from lab.targets.lower import lower_deck
 from lab.targets.manual import Manual
+from lab.units import magnitude
 from lab.validation import CompileError, logical_bindings, validate
 
 
@@ -35,6 +37,7 @@ class Compilation:
     target: TargetPlan
     final_volumes: tuple[tuple[Location, Decimal], ...]
     directory: Path | None = None
+    diagnostics: tuple[Diagnostic, ...] = ()
 
     @property
     def manifest(self) -> OutputManifest:
@@ -59,6 +62,7 @@ class Compilation:
                     {"location": encode(location), "volume": encode(volume)}
                     for location, volume in self.final_volumes
                 ],
+                "diagnostics": encode(self.diagnostics),
                 "source_sha256": (
                     hashlib.sha256(self.target.source.encode()).hexdigest()
                     if self.target.source is not None
@@ -140,6 +144,9 @@ def compile(
     deck: Deck | None = None,
     liquid_handler: LiquidHandler | None = None,
     to: str | Path | None | _DefaultOutput = _DEFAULT_OUTPUT,
+    warn_below: Any = None,
+    resolution: Any = None,
+    tip_policy: TipPolicy | None = None,
 ) -> Compilation:
     """Snapshot and compile a protocol for a manual document or a robot.
 
@@ -147,6 +154,12 @@ def compile(
     ``deck`` with a liquid handler for a robot, or omit both for a manual document.
     Bundles are written to ``~/.lab/<protocol>/<target>/``; ``LAB_HOME`` changes
     that root, ``to`` selects a directory, and ``to=None`` skips writing.
+
+    ``warn_below`` is the smallest volume the lab trusts any head to deliver; liquid steps
+    under it, or under a head's own trusted floor, appear in ``Compilation.diagnostics``
+    without failing compilation. ``resolution`` adds a note for volumes that cannot be
+    dialed on a pipette with that step size. ``tip_policy`` overrides the policy the
+    protocol was recorded with; targets pick up and drop tips accordingly.
     """
     if not isinstance(protocol, Protocol):
         raise TypeError("Compile a Protocol; use an experiment builder to turn designs into one.")
@@ -160,15 +173,17 @@ def compile(
         deck if deck is not None else target if target is not None else Manual()
     )
     recorded = protocol.snapshot()
+    if tip_policy is not None:
+        if not isinstance(tip_policy, TipPolicy):
+            raise TypeError("Pass a TipPolicy member")
+        recorded = replace(recorded, tip_policy=tip_policy)
     authored_deck = hardware if isinstance(hardware, Deck) else None
     if isinstance(hardware, Deck):
         if not isinstance(liquid_handler, LiquidHandler):
             raise TypeError(
                 "Pass liquid_handler=LiquidHandler.OT2, LiquidHandler.FLEX, or LiquidHandler.STAR."
             )
-        liquid = tuple(
-            step.volume for step in recorded.steps if isinstance(step, (Transfer, Mix, Distribute))
-        )
+        liquid = tuple(step.volume for step in recorded.steps if isinstance(step, LIQUID_STEPS))
         requirements = {container.id: container.labware for container in hardware.containers}
         for resource in recorded.resources:
             spec = requirements.get(resource.name)
@@ -196,7 +211,13 @@ def compile(
         configuration["lab_deck"] = encode(authored_deck)
         prepared = replace(prepared, configuration_json=json.dumps(configuration, sort_keys=True))
     volumes = validate(recorded, prepared.bindings)
-    compilation = Compilation(recorded, prepared, tuple(volumes.items()))
+    diagnostics = advise(
+        recorded,
+        prepared.limits,
+        warn_below=magnitude(warn_below, "microliter") if warn_below is not None else None,
+        resolution=magnitude(resolution, "microliter") if resolution is not None else None,
+    )
+    compilation = Compilation(recorded, prepared, tuple(volumes.items()), diagnostics=diagnostics)
     directory = _output_directory(compilation, to)
     if directory is not None:
         _write_output(directory, compilation.files)

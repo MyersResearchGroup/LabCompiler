@@ -113,7 +113,7 @@ class PreparationPreview extends HTMLElement {
       const anchor = well.dataset.mapWell;
       const state = this.volumes.get(anchor);
       well.querySelector(".well-liquid").setAttribute("r", state.radius);
-      well.classList.toggle("is-source", anchor === frame.source);
+      well.classList.toggle("is-source", anchor === frame.source || (frame.sources || []).includes(anchor));
       well.classList.toggle("is-destination", frame.destinations.includes(anchor));
       well.classList.toggle("is-active", frame.active.includes(anchor));
       const description = `${well.dataset.wellLabel} · ${state.volume} µL · ${label}`;

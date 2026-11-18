@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `lab.plates` describes a plate by its intended end state. `PlateDesign` and `WellTarget` hold per-well `Material` records (a name, or a strain and construct that name it, with an optional SBOL design) and solute concentrations; `find_serial_dilutions()` and `parallelize()` detect geometric gradients, `find_replicate_groups()` identical chemistry; `plan_serial_dilution()` and `record_serial_dilution()` build a gradient at a chosen concentrate factor with the arithmetic documented in `docs/plates.md`; `plan_premix()` and `record_premix()` prepare replicate portions once; `arrange()` lays out a plate from `Requirements`; `assemble()` prepares a design from declared stocks, medium, vehicle, and inocula under a `Strategy` of direct, serial, or automatic dosing and reports its decisions.
+- `lab.config.PlateDesignConfig` and `PreparationConfig` are the typed JSON and TOML forms of a design and of the preparation settings. `lab.plugins.lmsf` reads and writes the LMSF destination CSV as a view of a design; the core package does not depend on that format.
+- `Protocol.capacity()` returns the declared capacity of a plate or well. `lab.uM` and `lab.mM` are exported molar units.
+- `compile(..., warn_below=, resolution=)` records advisory `Diagnostic`s on `Compilation.diagnostics`, in `plan.json`, and in a worksheet Advisories section: liquid steps below a head's trusted floor or the lab's own `warn_below`, and volumes that cannot be dialed at the given resolution. `lab.limits.PipettingLimits` describes each head's range and trusted floor; every `TargetPlan` lists its heads, and `Manual(pipettes=...)` takes a bench set. `lab.plates.advise_design()` gives the same advice for a design before any protocol exists. Hard limits remain `CompileError`s.
+
+- `Protocol.transfer()` and `mix()` accept sequences of wells and record `MultiTransfer` and `MultiMix` lane sets; `Plate.column()` returns a column in row order. Opentrons 8-channel heads (`PipetteModel.P20_MULTI_GEN2`, `P300_MULTI_GEN2`, `FLEX_8CHANNEL_50`, `FLEX_8CHANNEL_1000`, with `TipRackModel.FLEX_50_UL` and `FLEX_1000_UL`) run a full-column lane set in one stroke; STAR layouts configure up to eight `Channel`s and run lanes across them; single-channel heads and the manual target run lanes in turn. The worksheet lists lanes and animates them together.
+- `TipPolicy` is recorded with a protocol (`Protocol(name, tip_policy=...)`) or overridden with `compile(..., tip_policy=...)`: fresh per step, reuse per source, or reuse while every destination's contents are contained in the source's. `Protocol.load(..., components=...)` declares what a source is made of; `lab.tips` numbers and counts tips, and `prewet()` records a pre-wetting stroke. Generated robot programs and `plan.json` carry the policy; the worksheet shows the resulting tip count.
+
+### Changed behavior
+
+- The concentration-series example prepares the layout's Van gradients as serial dilutions by default (`preparation.strategy = "auto"`), draws gradient diluent from a second medium reservoir well, and discards one transfer volume per lane into a declared waste container. `--strategy direct` reproduces per-well dosing. Its configuration gains a `[preparation]` table, `medium.diluent_volume`, a `waste` container, one more tip rack per robot layout, and eight STAR channels so gradient columns move in one stroke. Serial dilution levels are recorded as lane sets, so the example compiles to 342 steps under `auto`.
+
 ## 0.3.0
 
 ### Changed behavior

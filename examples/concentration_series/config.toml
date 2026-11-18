@@ -13,6 +13,23 @@ source_dead_volume = "500 uL"
 # Assert known absence of every CSV solute and DMSO from medium AND all cultures.
 solute_and_vehicle_free_medium_and_cultures = true
 
+# Gradients the CSV contains (geometric series of one solute with everything else
+# constant) are prepared as serial dilutions under "auto" or "serial"; "direct" doses
+# every well straight from its stock. The gradient is built at `concentrate` times the
+# final concentration so the mixing volume fits the well, then topped up with the
+# constant additions. Runs shorter than serial_min_steps are dosed directly.
+# warn_below is the smallest volume this lab trusts any pipette to deliver; steps under
+# it (or under a head's own trusted floor) are listed as advisories, not errors.
+# tip_policy: "fresh_per_step" takes a new tip for every operation; "reuse_when_contained"
+# keeps a tip while every destination holds only what the source holds and pre-wets it first;
+# "reuse_per_source" keeps a tip while consecutive operations draw from one source.
+[preparation]
+strategy = "auto"
+concentrate = "2"
+serial_min_steps = 4
+warn_below = "2 uL"
+tip_policy = "fresh_per_step"
+
 # Portable classes specify these two rates only. Other robot settings and
 # calibration retain SDK defaults; the numbers below need instrument validation.
 [liquid_classes.aqueous]
@@ -41,6 +58,7 @@ name = "Base medium (development input)"
 well = "A1"                        # medium reservoir; other sources use reagents
 volume = "15000 uL"
 dead_volume = "500 uL"
+diluent_volume = "10000 uL"        # loads A2 of the same reservoir for serial dilutions
 liquid_class = "aqueous"
 
 [vehicle]
@@ -138,6 +156,10 @@ labware = { kind = "plate", rows = 8, columns = 12, capacity_ul = "360" }
 
 [[deck.containers]]
 id = "medium"
+labware = { kind = "reservoir", rows = 1, columns = 2, capacity_ul = "15000" }
+
+[[deck.containers]]
+id = "waste"
 labware = { kind = "reservoir", rows = 1, columns = 1, capacity_ul = "15000" }
 
 [[deck.layouts]]
@@ -145,7 +167,8 @@ liquid_handler = "ot2"
 placements = [
   { container = "reagents", model = "nest_12_reservoir_15_ml", location = { name = "1" } },
   { container = "cultures", model = "corning_96_360_ul", location = { name = "2" } },
-  { container = "medium", model = "nest_12_reservoir_15_ml", location = { name = "3" }, wells = ["A1"] },
+  { container = "medium", model = "nest_12_reservoir_15_ml", location = { name = "3" }, wells = ["A1", "A2"] },
+  { container = "waste", model = "nest_12_reservoir_15_ml", location = { name = "4" }, wells = ["A12"] },
 ]
 tip_racks = [
   { id = "p300_tips", model = "opentrons_300_ul", location = { name = "5" } },
@@ -153,9 +176,10 @@ tip_racks = [
   { id = "p300_tips_2", model = "opentrons_300_ul", location = { name = "7" } },
   { id = "p300_tips_3", model = "opentrons_300_ul", location = { name = "8" } },
   { id = "p20_tips_2", model = "opentrons_20_ul", location = { name = "9" } },
+  { id = "p300_tips_4", model = "opentrons_300_ul", location = { name = "10" } },
 ]
 pipettes = [
-  { model = "p300_single_gen2", mount = "left", tip_racks = ["p300_tips", "p300_tips_2", "p300_tips_3"] },
+  { model = "p300_single_gen2", mount = "left", tip_racks = ["p300_tips", "p300_tips_2", "p300_tips_3", "p300_tips_4"] },
   { model = "p20_single_gen2", mount = "right", tip_racks = ["p20_tips", "p20_tips_2"] },
 ]
 
@@ -164,7 +188,8 @@ liquid_handler = "star"
 placements = [
   { container = "reagents", model = "nest_12_reservoir_15_ml", location = { holder = "plates", index = 0 } },
   { container = "cultures", model = "corning_96_360_ul", location = { holder = "plates", index = 1 } },
-  { container = "medium", model = "nest_12_reservoir_15_ml", location = { holder = "plates", index = 2 }, wells = ["A1"] },
+  { container = "medium", model = "nest_12_reservoir_15_ml", location = { holder = "plates", index = 2 }, wells = ["A1", "A2"] },
+  { container = "waste", model = "nest_12_reservoir_15_ml", location = { holder = "plates", index = 3 }, wells = ["A12"] },
 ]
 carriers = [
   { id = "plates", model = "hamilton_plate_5", location = { index = 15 } },
@@ -175,9 +200,17 @@ tip_racks = [
   { id = "star_tips_2", model = "hamilton_300_ul", location = { holder = "tips", index = 1 } },
   { id = "star_tips_3", model = "hamilton_300_ul", location = { holder = "tips", index = 2 } },
   { id = "star_tips_4", model = "hamilton_300_ul", location = { holder = "tips", index = 3 } },
+  { id = "star_tips_5", model = "hamilton_300_ul", location = { holder = "tips", index = 4 } },
 ]
-# One channel and 300 uL tips. The 1 uL minimum is a software demonstration
-# limit, not a validated physical operating range.
+# Eight independent channels with 300 uL tips; a gradient column moves in one stroke.
+# The 1 uL minimum is a software demonstration limit, not a validated operating range.
 channels = [
-  { index = 0, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4"] },
+  { index = 0, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 1, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 2, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 3, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 4, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 5, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 6, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
+  { index = 7, min_volume_ul = "1", max_volume_ul = "300", tip_racks = ["star_tips", "star_tips_2", "star_tips_3", "star_tips_4", "star_tips_5"] },
 ]

@@ -22,6 +22,7 @@ from pydantic import (
 )
 
 from lab.liquid_classes import HamiltonLiquidClass
+from lab.plates.design import Material, PlateDesign, well_target
 from lab.units import Quantity, parse_quantity, units
 
 # All quantities are finite. Concentrations can be molar or mass/volume;
@@ -107,3 +108,79 @@ class MixingConfig(ConfigModel):
     volume: Volume
     cycles: Annotated[int, Field(strict=True, gt=0)]
     liquid_class: NonemptyString
+
+
+WellName = Annotated[str, Field(strict=True, pattern=r"^[A-Z](?:[1-9]|[1-9][0-9])$")]
+
+
+class MaterialConfig(ConfigModel):
+    """A named material with optional structure; a bare string is accepted as the name.
+
+    The genetic construct is written as ``construct`` in configuration; the attribute is
+    named ``genetic_construct`` because pydantic reserves ``construct``.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid", arbitrary_types_allowed=True, frozen=True, populate_by_name=True
+    )
+
+    name: NonemptyString
+    strain: NonemptyString | None = None
+    genetic_construct: NonemptyString | None = Field(default=None, alias="construct")
+    design: NonemptyString | None = None
+
+    def to_material(self) -> Material:
+        return Material(
+            name=self.name,
+            strain=self.strain,
+            construct=self.genetic_construct,
+            design=self.design,
+        )
+
+
+class WellTargetConfig(ConfigModel):
+    """One well of a plate design: an optional material and solute concentrations."""
+
+    well: WellName
+    material: MaterialConfig | NonemptyString | None = None
+    concentrations: dict[NonemptyString, Concentration]
+
+    def to_material(self) -> Material | None:
+        if isinstance(self.material, MaterialConfig):
+            return self.material.to_material()
+        return Material(name=self.material) if self.material else None
+
+
+class PlateDesignConfig(ConfigModel):
+    """A plate design as JSON or TOML; ``to_design()`` builds the Lab object."""
+
+    name: NonemptyString
+    shape: tuple[Annotated[int, Field(ge=1, le=26)], Annotated[int, Field(ge=1)]] = (8, 12)
+    final_volume: Volume
+    wells: Annotated[tuple[WellTargetConfig, ...], Field(min_length=1)]
+
+    def to_design(self) -> PlateDesign:
+        return PlateDesign.build(
+            self.name,
+            shape=self.shape,
+            final_volume=self.final_volume,
+            wells=(
+                well_target(w.well, material=w.to_material(), concentrations=w.concentrations)
+                for w in self.wells
+            ),
+        )
+
+
+class PreparationConfig(ConfigModel):
+    """How a design is turned into operations; mirrors ``lab.plates.recipe.Settings``."""
+
+    strategy: Literal["direct", "serial", "auto"] = "auto"
+    concentrate: Annotated[Decimal, Field(ge=1, allow_inf_nan=False)] = Decimal(2)
+    serial_min_steps: Annotated[int, Field(strict=True, ge=2)] = 4
+    premix_min_group: Annotated[int, Field(strict=True, ge=2)] | None = None
+    premix_overage: Annotated[Decimal, Field(ge=1, allow_inf_nan=False)] = Decimal("1.1")
+    warn_below: Volume | None = None
+    resolution: Volume | None = None
+    tip_policy: Literal["fresh_per_step", "reuse_per_source", "reuse_when_contained"] = (
+        "fresh_per_step"
+    )

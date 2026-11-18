@@ -6,6 +6,8 @@ from lab.model import (
     Binding,
     Distribute,
     Mix,
+    MultiMix,
+    MultiTransfer,
     RecordedProtocol,
     SetTemperature,
     Step,
@@ -123,6 +125,31 @@ def volume_trace(
                     raise step_error(index, step, f"Transfer overflows {step.destination}")
                 volumes[source] -= step.volume
                 volumes[step.destination] += step.volume
+        elif isinstance(step, (MultiTransfer, MultiMix)):
+            sources = step.sources if isinstance(step, MultiTransfer) else step.locations
+            required: dict[Location, Decimal] = {}
+            for source in sources:
+                if source not in volumes:
+                    raise step_error(index, step, f"Unknown source {source}")
+                required[source] = required.get(source, Decimal(0)) + step.volume
+            for source, total in required.items():
+                available = max(Decimal(0), volumes[source] - dead[source])
+                if total > available:
+                    raise step_error(
+                        index,
+                        step,
+                        f"{source} needs {number(total)} µL; only "
+                        f"{number(available)} µL is available above its dead volume",
+                    )
+            if isinstance(step, MultiTransfer):
+                for destination in step.destinations:
+                    if destination not in volumes:
+                        raise step_error(index, step, f"Unknown destination {destination}")
+                    if volumes[destination] + step.volume > capacities[destination]:
+                        raise step_error(index, step, f"Transfer overflows {destination}")
+                for source, destination in zip(step.sources, step.destinations, strict=True):
+                    volumes[source] -= step.volume
+                    volumes[destination] += step.volume
         elif isinstance(step, Distribute):
             if step.source not in volumes:
                 raise step_error(index, step, f"Unknown source {step.source}")

@@ -64,7 +64,9 @@ class TransferMotion extends HTMLElement {
 
   geometry(frame) {
     const board = this.board.getBoundingClientRect();
-    const anchors = frame.refill_between_destinations
+    const anchors = frame.lanes
+      ? frame.destinations.flatMap((destination, index) => [frame.sources[index], destination])
+      : frame.refill_between_destinations
       ? frame.destinations.flatMap(destination => [frame.source, destination])
       : frame.source ? [frame.source, ...frame.destinations] : frame.active;
     const points = anchors.map(anchor => this.point(anchor));
@@ -93,7 +95,9 @@ class TransferMotion extends HTMLElement {
   showFrame(frame, animate = false, origin = null) {
     this.stop();
     this.frame = frame;
-    this.duration = Math.max(900, frame.refill_between_destinations
+    this.duration = Math.max(900, frame.lanes
+      ? 900
+      : frame.refill_between_destinations
       ? frame.destinations.length * 900
       : frame.source ? 250 + frame.destinations.length * 450 : frame.mix_cycles * 400);
     this.routes.replaceChildren();
@@ -109,7 +113,7 @@ class TransferMotion extends HTMLElement {
     const transitionDuration = animate && !this.reducedMotion.matches && distance > .5
       ? Math.min(240, Math.max(100, distance / 3)) : 0;
     const paths = points.slice(1).map((point, index) =>
-      this.route(points[index], point, frame.refill_between_destinations && index % 2 === 1));
+      this.route(points[index], point, (frame.refill_between_destinations || frame.lanes) && index % 2 === 1));
     const last = points.at(-1);
     this.pipette.style.transform = `translate(${last.x}px, ${last.y - 12}px)`;
     if (!animate || this.reducedMotion.matches) return;

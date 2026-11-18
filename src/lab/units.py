@@ -8,6 +8,8 @@ import pint
 units = pint.UnitRegistry(non_int_type=Decimal)
 uL = units.microliter
 mL = units.milliliter
+uM = units.micromolar
+mM = units.millimolar
 seconds = units.second
 minutes = units.minute
 Quantity = pint.Quantity

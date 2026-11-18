@@ -1,0 +1,20 @@
+{% from "components/ui.html" import reference %}
+{% if document.advisories %}
+<section id="advisories" class="advisories" aria-labelledby="advisories-title">
+  <h2 id="advisories-title">Advisories</h2>
+  <p class="section-note">Findings that compile but deserve attention. Hard limits are enforced during compilation and never appear here.</p>
+  <table>
+    <thead><tr><th scope="col">Severity</th><th scope="col">Step</th><th scope="col">Finding</th><th scope="col">Wells</th></tr></thead>
+    <tbody>
+      {% for row in document.advisories %}
+      <tr class="advisory-{{ row.diagnostic.severity.value }}">
+        <td>{{ row.diagnostic.severity.value }}</td>
+        <td class="step-number">{% if row.step_number is not none %}<a href="#step-{{ row.step_number }}">{{ "%02d"|format(row.step_number) }}</a>{% endif %}</td>
+        <td>{{ row.diagnostic.message }}</td>
+        <td class="location">{% for ref in row.locations %}{{ reference(ref) }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

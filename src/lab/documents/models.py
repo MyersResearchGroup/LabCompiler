@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TypeAlias
 
+from lab.diagnostics import Diagnostic
 from lab.documents.flow import FlowProfile
 from lab.model import Fill, RecordedProtocol, Resource, TargetPlan
 from lab.samples import Location, Sample
@@ -63,6 +64,7 @@ class ProcedureRow:
     volume_note: str = ""
     source: Reference | None = None
     destinations: tuple[Reference, ...] = ()
+    sources: tuple[Reference, ...] = ()
     liquid_class: Reference | None = None
     air_gap: Decimal | None = None
 
@@ -106,6 +108,8 @@ class PlateMapView:
 
 @dataclass(frozen=True)
 class PreparationFrame:
+    """The state after one operation. ``sources`` pairs with ``destinations`` when ``lanes``."""
+
     number: int
     description: str
     source: str | None
@@ -114,12 +118,21 @@ class PreparationFrame:
     volumes: tuple[WellVolume, ...]
     mix_cycles: int = 0
     refill_between_destinations: bool = False
+    sources: tuple[str, ...] = ()
+    lanes: bool = False
 
 
 @dataclass(frozen=True)
 class PreparationView:
     plates: tuple[PlateMapView, ...]
     frames: tuple[PreparationFrame, ...]
+
+
+@dataclass(frozen=True)
+class AdvisoryRow:
+    diagnostic: Diagnostic
+    step_number: int | None
+    locations: tuple[Reference, ...]
 
 
 @dataclass(frozen=True)
@@ -134,3 +147,4 @@ class Worksheet:
     procedure: tuple[ProcedureRow, ...]
     liquid_classes: tuple[LiquidClassView, ...]
     preparation: PreparationView
+    advisories: tuple[AdvisoryRow, ...] = ()

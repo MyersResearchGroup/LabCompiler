@@ -2,21 +2,42 @@
 
 from lab.liquid_classes import HamiltonLiquidClass, LiquidClass
 from lab.model import (
+    LIQUID_STEPS,
     Distribute,
     ManualInstruction,
     Mix,
+    MultiMix,
+    MultiTransfer,
     SetTemperature,
     Step,
     Thermocycle,
     Transfer,
     Wait,
 )
+from lab.samples import Location
 from lab.units import number
+
+
+def column_of(locations: tuple[Location, ...]) -> str | None:
+    """``"cultures column 12 (rows A–H)"`` when locations run down one column, else None."""
+    if len(locations) < 2 or len({location.resource for location in locations}) != 1:
+        return None
+    columns = {location.well[1:] for location in locations}
+    rows = [location.well[0] for location in locations]
+    if len(columns) != 1 or rows != sorted(rows) or len(set(rows)) != len(rows):
+        return None
+    contiguous = all(ord(b) - ord(a) == 1 for a, b in zip(rows, rows[1:], strict=False))
+    span = f"rows {rows[0]}–{rows[-1]}" if contiguous else f"rows {', '.join(rows)}"
+    return f"{locations[0].resource} column {columns.pop()} ({span})"
+
+
+def _lanes(locations: tuple[Location, ...]) -> str:
+    return column_of(locations) or ", ".join(str(location) for location in locations)
 
 
 def describe(step: Step) -> str:
     liquid = ""
-    if isinstance(step, (Transfer, Distribute, Mix)):
+    if isinstance(step, LIQUID_STEPS):
         if isinstance(step.liquid_class, LiquidClass):
             spec = step.liquid_class
             liquid = (
@@ -32,8 +53,19 @@ def describe(step: Step) -> str:
             wells = ", ".join(str(destination) for destination in destinations)
             gap = f" Air gap {number(air_gap)} µL." if air_gap is not None else ""
             return f"Distribute {number(volume)} µL from {source} to {wells}.{gap}{liquid}"
+        case MultiTransfer(sources, destinations, volume, _):
+            lane_count = len(destinations)
+            origin_text = f"{sources[0]}" if len(set(sources)) == 1 else _lanes(sources)
+            return (
+                f"Transfer {number(volume)} µL along {lane_count} lanes together from "
+                f"{origin_text} to {_lanes(destinations)}.{liquid}"
+            )
         case Mix(location, volume, cycles, _):
             return f"Mix {location}: {cycles} cycles of {number(volume)} µL.{liquid}"
+        case MultiMix(locations, volume, cycles, _):
+            return (
+                f"Mix {_lanes(locations)} together: {cycles} cycles of {number(volume)} µL.{liquid}"
+            )
         case Wait(seconds, _):
             unit = "second" if seconds == 1 else "seconds"
             return f"Wait {number(seconds)} {unit}."
